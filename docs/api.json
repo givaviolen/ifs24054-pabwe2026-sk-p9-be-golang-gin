@@ -1,0 +1,661 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Delcom Blog API",
+    "version": "1.0.0",
+    "description": "REST API Delcom Blog (Golang Gin). Format respons: {status, message, data?}"
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "paths": {
+    "/api/public/categories": {
+      "get": {
+        "summary": "Daftar kategori artikel",
+        "tags": [
+          "Publik"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/api/public/posts": {
+      "get": {
+        "summary": "Daftar artikel terbit",
+        "tags": [
+          "Publik"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/public/posts/{slug}": {
+      "get": {
+        "summary": "Detail artikel publik berdasarkan slug",
+        "tags": [
+          "Publik"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/auth/register": {
+      "post": {
+        "summary": "Registrasi penulis baru",
+        "tags": [
+          "Auth"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Register"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "summary": "Login dan terima token JWT",
+        "tags": [
+          "Auth"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Login"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "summary": "Logout",
+        "tags": [
+          "Auth"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/auth/profile": {
+      "get": {
+        "summary": "Profil penulis",
+        "tags": [
+          "Auth"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "summary": "Perbarui profil",
+        "tags": [
+          "Auth"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Profile"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/posts": {
+      "get": {
+        "summary": "Artikel milik penulis",
+        "tags": [
+          "Penulis"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "Buat artikel",
+        "tags": [
+          "Penulis"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Post"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/posts/stats": {
+      "get": {
+        "summary": "Statistik 3 kartu penulis",
+        "tags": [
+          "Penulis"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/posts/ai-generate": {
+      "post": {
+        "summary": "Generate artikel dengan AI + Search Engine",
+        "tags": [
+          "Penulis"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AIGenerate"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/posts/{id}": {
+      "get": {
+        "summary": "Detail artikel milik penulis",
+        "tags": [
+          "Penulis"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "put": {
+        "summary": "Perbarui artikel",
+        "tags": [
+          "Penulis"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Post"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Hapus artikel",
+        "tags": [
+          "Penulis"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/posts/{id}/toggle-publish": {
+      "patch": {
+        "summary": "Toggle Draf/Terbit",
+        "tags": [
+          "Penulis"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/admin/users": {
+      "get": {
+        "summary": "Seluruh pengguna + total artikel",
+        "tags": [
+          "Admin"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/posts": {
+      "get": {
+        "summary": "Arsip seluruh artikel",
+        "tags": [
+          "Admin"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/users/{id}/posts": {
+      "get": {
+        "summary": "Artikel milik pengguna tertentu",
+        "tags": [
+          "Admin"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "Register": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
+        }
+      },
+      "Login": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
+        }
+      },
+      "Profile": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
+        }
+      },
+      "Post": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "excerpt": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "cover_image_path": {
+            "type": "string"
+          },
+          "is_published": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AIGenerate": {
+        "type": "object",
+        "properties": {
+          "topic": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "include_web_search": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  }
+}
