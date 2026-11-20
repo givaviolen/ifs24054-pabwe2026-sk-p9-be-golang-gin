@@ -38,13 +38,22 @@ func NewRouter(cfg *config.Config, db *gorm.DB, deps *Deps) *gin.Engine {
 		deps.Completer = ai.NewOpenAIClient(cfg.OpenAIEndpoint, cfg.OpenAIKey, cfg.OpenAIModel)
 	}
 
-	authH := auth.NewHandler(auth.NewService(auth.NewRepository(db), cfg.AppKey))
+	authH := auth.NewHandler(auth.NewService(auth.NewRepository(db), cfg.AppKey, cfg.AllowAdminRegister))
 	postH := post.NewHandler(post.NewService(post.NewRepository(db)))
 	aiH := ai.NewHandler(ai.NewService(deps.Searcher, deps.Completer))
 
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery(), middleware.CORS())
 
+	// Health check / base URL
+	r.GET("/", func(c *gin.Context) {
+		response.Success(c, http.StatusOK, "Delcom Blog API berjalan", gin.H{
+			"name":    "Delcom Blog API",
+			"version": "1.0.0",
+		})
+	})
+
+	// Swagger UI & spesifikasi OpenAPI
 	r.GET("/api.json", func(c *gin.Context) { c.Data(http.StatusOK, "application/json", docs.Spec) })
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler, ginSwagger.URL("/api.json")))
 
@@ -58,7 +67,7 @@ func NewRouter(cfg *config.Config, db *gorm.DB, deps *Deps) *gin.Engine {
 	a := api.Group("/auth")
 	a.POST("/register", authH.Register)
 	a.POST("/login", authH.Login)
-	a.POST("/logout", middleware.Auth(cfg.AppKey), authH.Logout)
+	a.POST("/logout", authH.Logout)
 	a.GET("/profile", middleware.Auth(cfg.AppKey), authH.Profile)
 	a.PUT("/profile", middleware.Auth(cfg.AppKey), authH.UpdateProfile)
 
@@ -66,7 +75,7 @@ func NewRouter(cfg *config.Config, db *gorm.DB, deps *Deps) *gin.Engine {
 	p.GET("", postH.List)
 	p.POST("", postH.Create)
 	p.GET("/stats", postH.Stats)
-	p.POST("/ai-generate", middleware.RateLimiter(10, time.Minute), aiH.Generate)
+	p.POST("/ai-generate", middleware.RateLimiter(30, time.Minute), aiH.Generate)
 	p.GET("/:id", postH.Detail)
 	p.PUT("/:id", postH.Update)
 	p.PATCH("/:id/toggle-publish", postH.TogglePublish)

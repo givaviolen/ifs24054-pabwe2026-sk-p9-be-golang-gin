@@ -1,8 +1,25 @@
-# Biner diawali "/" agar folder internal/server tidak ikut terabaikan (Jenkins)
-/server
-/main
-/app
-/server.exe
+# Environment files
 .env
-*.test
+
+# Binaries - HARUS diawali "/" agar folder internal/server/ tidak ikut terabaikan (Jenkins)
+/server
+/server.exe
+/main
+/main.exe
+/app
+/app.exe
+
+# Test artifacts & coverage
 *.out
+*.test
+coverage.html
+.trivy-cache/
+trivy-results.sarif
+latest-app.zip
+
+# IDE & OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

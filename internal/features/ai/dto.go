@@ -1,7 +1,7 @@
 package ai
 
 type GenerateRequest struct {
-	Topic            string `json:"topic" binding:"required,min=3"`
+	Topic            string `json:"topic"`
 	Category         string `json:"category"`
 	IncludeWebSearch *bool  `json:"include_web_search"`
 }

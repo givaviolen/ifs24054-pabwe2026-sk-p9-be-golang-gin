@@ -26,3 +26,10 @@ func TestHashPassword(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotEqual(t, "rahasia", h)
 }
+
+func TestValidEmail(t *testing.T) {
+	assert.True(t, validEmail("a@uji.local"))
+	assert.False(t, validEmail("bukan-email"))
+	assert.False(t, validEmail("Nama <a@uji.local>"))
+	assert.False(t, validEmail("a@localhost"))
+}

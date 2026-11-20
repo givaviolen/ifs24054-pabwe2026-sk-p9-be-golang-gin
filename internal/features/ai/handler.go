@@ -1,8 +1,8 @@
 package ai
 
 import (
-	"errors"
 	"net/http"
+	"strings"
 
 	"app/internal/response"
 
@@ -16,17 +16,17 @@ func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 func (h *Handler) Generate(c *gin.Context) {
 	var req GenerateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Fail(c, http.StatusBadRequest, "Topik wajib diisi (minimal 3 karakter)")
+		response.Fail(c, http.StatusBadRequest, "Field topic wajib diisi dengan format JSON yang valid")
+		return
+	}
+	if strings.TrimSpace(req.Topic) == "" {
+		response.Fail(c, http.StatusBadRequest, "Field topic wajib diisi")
 		return
 	}
 	g, err := h.svc.Generate(c.Request.Context(), req)
-	if errors.Is(err, ErrBadModelOutput) {
-		response.Fail(c, http.StatusBadGateway, err.Error())
-		return
-	}
 	if err != nil {
-		response.Fail(c, http.StatusBadGateway, "Gagal menghasilkan artikel dari layanan AI")
+		response.Error(c, "Gagal memproses draf OpenAI: "+err.Error())
 		return
 	}
-	response.Success(c, http.StatusOK, "Draf artikel berhasil dibuat", g)
+	response.Success(c, http.StatusOK, "Draf artikel AI berhasil dibuat", g)
 }

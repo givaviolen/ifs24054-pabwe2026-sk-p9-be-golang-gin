@@ -17,7 +17,7 @@ func (r *Repository) ListPublic(q, category string) ([]Post, error) {
 		like := "%" + q + "%"
 		tx = tx.Where("(LOWER(title) LIKE ? OR LOWER(excerpt) LIKE ? OR LOWER(content) LIKE ?)", like, like, like)
 	}
-	if category != "" && category != "Semua" {
+	if category = strings.TrimSpace(category); category != "" && !strings.EqualFold(category, "Semua") {
 		tx = tx.Where("category = ?", category)
 	}
 	err := tx.Order("published_at DESC, id DESC").Find(&posts).Error
@@ -39,9 +39,9 @@ func (r *Repository) ListByUser(uid uint) ([]Post, error) {
 	return posts, err
 }
 
-func (r *Repository) FindByIDAndUser(id, uid uint) (*Post, error) {
+func (r *Repository) FindByID(id uint) (*Post, error) {
 	var p Post
-	if err := r.db.Preload("User").Where("id = ? AND user_id = ?", id, uid).First(&p).Error; err != nil {
+	if err := r.db.Preload("User").First(&p, id).Error; err != nil {
 		return nil, err
 	}
 	return &p, nil
@@ -51,26 +51,20 @@ func (r *Repository) Create(p *Post) error { return r.db.Omit("User").Create(p).
 
 func (r *Repository) Save(p *Post) error { return r.db.Omit("User").Save(p).Error }
 
-func (r *Repository) Delete(id, uid uint) error {
-	return r.db.Where("id = ? AND user_id = ?", id, uid).Delete(&Post{}).Error
-}
+func (r *Repository) Delete(id uint) error { return r.db.Delete(&Post{}, id).Error }
 
-func (r *Repository) SlugExists(slug string, excludeID uint) (bool, error) {
+func (r *Repository) SlugExists(slug string) (bool, error) {
 	var n int64
-	err := r.db.Model(&Post{}).Where("slug = ? AND id <> ?", slug, excludeID).Count(&n).Error
+	err := r.db.Model(&Post{}).Where("slug = ?", slug).Count(&n).Error
 	return n > 0, err
 }
 
-func (r *Repository) Stats(uid uint) (Stats, error) {
-	var s Stats
-	if err := r.db.Model(&Post{}).Where("user_id = ?", uid).Count(&s.Total).Error; err != nil {
-		return s, err
+func (r *Repository) Stats(uid uint) (total int64, published int64, err error) {
+	if err = r.db.Model(&Post{}).Where("user_id = ?", uid).Count(&total).Error; err != nil {
+		return
 	}
-	if err := r.db.Model(&Post{}).Where("user_id = ? AND is_published = ?", uid, true).Count(&s.Published).Error; err != nil {
-		return s, err
-	}
-	s.Draft = s.Total - s.Published
-	return s, nil
+	err = r.db.Model(&Post{}).Where("user_id = ? AND is_published = ?", uid, true).Count(&published).Error
+	return
 }
 
 func (r *Repository) ListAll() ([]Post, error) {
@@ -79,11 +73,11 @@ func (r *Repository) ListAll() ([]Post, error) {
 	return posts, err
 }
 
-func (r *Repository) AdminUsers() ([]AdminUser, error) {
-	out := []AdminUser{}
+func (r *Repository) AdminUsers() ([]AdminUserResponse, error) {
+	out := []AdminUserResponse{}
 	err := r.db.Table("users").
-		Select("users.id, users.username, users.email, users.role, " +
-			"COUNT(posts.id) AS total_posts, " +
+		Select("users.id, users.username, users.email, users.role, users.created_at, " +
+			"COUNT(posts.id) AS total_articles, " +
 			"COALESCE(SUM(CASE WHEN posts.is_published THEN 1 ELSE 0 END), 0) AS total_published").
 		Joins("LEFT JOIN posts ON posts.user_id = users.id").
 		Group("users.id").

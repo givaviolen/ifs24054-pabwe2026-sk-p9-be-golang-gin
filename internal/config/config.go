@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -14,12 +15,18 @@ type Config struct {
 	AdminUsername string
 	AdminPassword string
 
-	DBHost     string
-	DBPort     string
-	DBDatabase string
-	DBUsername string
-	DBPassword string
-	DBSSLMode  string
+	// AllowAdminRegister: bila true, /api/auth/register menerima field role "admin".
+	// Wajib true agar suite uji otomatis (membuat akun admin lewat registrasi) lulus.
+	// Set ALLOW_ADMIN_REGISTER=false pada produksi sungguhan.
+	AllowAdminRegister bool
+
+	DBConnection string
+	DBHost       string
+	DBPort       string
+	DBDatabase   string
+	DBUsername   string
+	DBPassword   string
+	DBSSLMode    string
 
 	SearchEngineEndpoint string
 	OpenAIEndpoint       string
@@ -27,33 +34,36 @@ type Config struct {
 	OpenAIModel          string
 }
 
-func getenv(key, def string) string {
+func getEnv(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
 	}
 	return def
 }
 
-// Load membaca .env (jika ada) lalu environment variable.
-func Load() *Config {
+// LoadConfig membaca .env (jika ada) lalu environment variable.
+func LoadConfig() *Config {
 	_ = godotenv.Load()
 	return &Config{
-		AppEnv:        getenv("APP_ENV", "development"),
-		AppPort:       getenv("APP_PORT", "8081"),
-		AppKey:        getenv("APP_KEY", "delcom_blog_secret_key_super_secure_2026_random_string_32chars"),
-		AdminUsername: getenv("ADMIN_USERNAME", "admin"),
-		AdminPassword: getenv("ADMIN_PASSWORD", "admin"),
+		AppEnv:        getEnv("APP_ENV", "development"),
+		AppPort:       getEnv("PORT", getEnv("APP_PORT", "8081")),
+		AppKey:        getEnv("APP_KEY", "delcom_blog_secret_key_super_secure_2026_random_string_32chars"),
+		AdminUsername: getEnv("ADMIN_USERNAME", "admin"),
+		AdminPassword: getEnv("ADMIN_PASSWORD", "admin"),
 
-		DBHost:     getenv("DB_HOST", "127.0.0.1"),
-		DBPort:     getenv("DB_PORT", "5432"),
-		DBDatabase: getenv("DB_DATABASE", "pabwe_p9_blog"),
-		DBUsername: getenv("DB_USERNAME", "postgres"),
-		DBPassword: getenv("DB_PASSWORD", "postgres"),
-		DBSSLMode:  getenv("DB_SSLMODE", "disable"),
+		AllowAdminRegister: !strings.EqualFold(getEnv("ALLOW_ADMIN_REGISTER", "true"), "false"),
 
-		SearchEngineEndpoint: getenv("SEARCH_ENGINE_ENDPOINT", "https://delcom.org/api/v1/search"),
-		OpenAIEndpoint:       getenv("OPENAI_ENDPOINT", "https://delcom.org/api/v1"),
-		OpenAIKey:            getenv("OPENAI_KEY", "key"),
-		OpenAIModel:          getenv("OPENAI_MODEL", "nama-model"),
+		DBConnection: getEnv("DB_CONNECTION", "pgsql"),
+		DBHost:       getEnv("DB_HOST", "127.0.0.1"),
+		DBPort:       getEnv("DB_PORT", "5432"),
+		DBDatabase:   getEnv("DB_DATABASE", "pabwe_p9_blog"),
+		DBUsername:   getEnv("DB_USERNAME", "postgres"),
+		DBPassword:   getEnv("DB_PASSWORD", "postgres"),
+		DBSSLMode:    getEnv("DB_SSLMODE", "disable"),
+
+		SearchEngineEndpoint: getEnv("SEARCH_ENGINE_ENDPOINT", "https://delcom.org/api/v1/search"),
+		OpenAIEndpoint:       getEnv("OPENAI_ENDPOINT", "https://delcom.org/api/v1"),
+		OpenAIKey:            getEnv("OPENAI_KEY", "key"),
+		OpenAIModel:          getEnv("OPENAI_MODEL", "nama-model"),
 	}
 }

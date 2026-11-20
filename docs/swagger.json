@@ -11,6 +11,19 @@
     }
   ],
   "paths": {
+    "/": {
+      "get": {
+        "summary": "Health check",
+        "tags": [
+          "Sistem"
+        ],
+        "responses": {
+          "200": {
+            "description": "200"
+          }
+        }
+      }
+    },
     "/api/public/categories": {
       "get": {
         "summary": "Daftar kategori artikel",
@@ -19,32 +32,32 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "200"
           },
           "400": {
-            "description": "Bad Request"
+            "description": "400"
           },
           "404": {
-            "description": "Not Found"
+            "description": "404"
           }
         }
       }
     },
     "/api/public/posts": {
       "get": {
-        "summary": "Daftar artikel terbit",
+        "summary": "Daftar artikel terbit (?q=, ?category=)",
         "tags": [
           "Publik"
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "200"
           },
           "400": {
-            "description": "Bad Request"
+            "description": "400"
           },
           "404": {
-            "description": "Not Found"
+            "description": "404"
           }
         },
         "parameters": [
@@ -73,13 +86,13 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "200"
           },
           "400": {
-            "description": "Bad Request"
+            "description": "400"
           },
           "404": {
-            "description": "Not Found"
+            "description": "404"
           }
         },
         "parameters": [
@@ -96,19 +109,19 @@
     },
     "/api/auth/register": {
       "post": {
-        "summary": "Registrasi penulis baru",
+        "summary": "Registrasi akun (role opsional: admin/member)",
         "tags": [
           "Auth"
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "200"
           },
           "400": {
-            "description": "Bad Request"
+            "description": "400"
           },
           "404": {
-            "description": "Not Found"
+            "description": "404"
           }
         },
         "requestBody": {
@@ -125,19 +138,19 @@
     },
     "/api/auth/login": {
       "post": {
-        "summary": "Login dan terima token JWT",
+        "summary": "Login (username atau email) dan terima token JWT",
         "tags": [
           "Auth"
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "200"
           },
           "400": {
-            "description": "Bad Request"
+            "description": "400"
           },
           "404": {
-            "description": "Not Found"
+            "description": "404"
           }
         },
         "requestBody": {
@@ -160,37 +173,32 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "200"
           },
           "400": {
-            "description": "Bad Request"
+            "description": "400"
           },
           "404": {
-            "description": "Not Found"
+            "description": "404"
           }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
+        }
       }
     },
     "/api/auth/profile": {
       "get": {
-        "summary": "Profil penulis",
+        "summary": "Profil akun",
         "tags": [
           "Auth"
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "200"
           },
           "400": {
-            "description": "Bad Request"
+            "description": "400"
           },
           "404": {
-            "description": "Not Found"
+            "description": "404"
           }
         },
         "security": [
@@ -200,19 +208,19 @@
         ]
       },
       "put": {
-        "summary": "Perbarui profil",
+        "summary": "Perbarui email/password",
         "tags": [
           "Auth"
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "200"
           },
           "400": {
-            "description": "Bad Request"
+            "description": "400"
           },
           "404": {
-            "description": "Not Found"
+            "description": "404"
           }
         },
         "security": [
@@ -240,13 +248,13 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "200"
           },
           "400": {
-            "description": "Bad Request"
+            "description": "400"
           },
           "404": {
-            "description": "Not Found"
+            "description": "404"
           }
         },
         "security": [
@@ -262,13 +270,13 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "200"
           },
           "400": {
-            "description": "Bad Request"
+            "description": "400"
           },
           "404": {
-            "description": "Not Found"
+            "description": "404"
           }
         },
         "security": [
@@ -281,7 +289,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Post"
+                "$ref": "#/components/schemas/CreatePost"
               }
             }
           }
@@ -290,19 +298,19 @@
     },
     "/api/posts/stats": {
       "get": {
-        "summary": "Statistik 3 kartu penulis",
+        "summary": "Statistik: total_articles, total_selesai, belum_selesai",
         "tags": [
           "Penulis"
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "200"
           },
           "400": {
-            "description": "Bad Request"
+            "description": "400"
           },
           "404": {
-            "description": "Not Found"
+            "description": "404"
           }
         },
         "security": [
@@ -320,13 +328,13 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "200"
           },
           "400": {
-            "description": "Bad Request"
+            "description": "400"
           },
           "404": {
-            "description": "Not Found"
+            "description": "404"
           }
         },
         "security": [
@@ -354,13 +362,13 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "200"
           },
           "400": {
-            "description": "Bad Request"
+            "description": "400"
           },
           "404": {
-            "description": "Not Found"
+            "description": "404"
           }
         },
         "security": [
@@ -380,19 +388,19 @@
         ]
       },
       "put": {
-        "summary": "Perbarui artikel",
+        "summary": "Perbarui artikel (field kosong diabaikan)",
         "tags": [
           "Penulis"
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "200"
           },
           "400": {
-            "description": "Bad Request"
+            "description": "400"
           },
           "404": {
-            "description": "Not Found"
+            "description": "404"
           }
         },
         "security": [
@@ -415,7 +423,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Post"
+                "$ref": "#/components/schemas/UpdatePost"
               }
             }
           }
@@ -428,13 +436,13 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "200"
           },
           "400": {
-            "description": "Bad Request"
+            "description": "400"
           },
           "404": {
-            "description": "Not Found"
+            "description": "404"
           }
         },
         "security": [
@@ -462,13 +470,13 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "200"
           },
           "400": {
-            "description": "Bad Request"
+            "description": "400"
           },
           "404": {
-            "description": "Not Found"
+            "description": "404"
           }
         },
         "security": [
@@ -496,13 +504,13 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "200"
           },
           "400": {
-            "description": "Bad Request"
+            "description": "400"
           },
           "404": {
-            "description": "Not Found"
+            "description": "404"
           }
         },
         "security": [
@@ -520,13 +528,13 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "200"
           },
           "400": {
-            "description": "Bad Request"
+            "description": "400"
           },
           "404": {
-            "description": "Not Found"
+            "description": "404"
           }
         },
         "security": [
@@ -544,13 +552,13 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "200"
           },
           "400": {
-            "description": "Bad Request"
+            "description": "400"
           },
           "404": {
-            "description": "Not Found"
+            "description": "404"
           }
         },
         "security": [
@@ -591,6 +599,9 @@
           },
           "password": {
             "type": "string"
+          },
+          "role": {
+            "type": "string"
           }
         }
       },
@@ -608,9 +619,6 @@
       "Profile": {
         "type": "object",
         "properties": {
-          "username": {
-            "type": "string"
-          },
           "email": {
             "type": "string"
           },
@@ -619,7 +627,30 @@
           }
         }
       },
-      "Post": {
+      "CreatePost": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "excerpt": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "cover_image_path": {
+            "type": "string"
+          },
+          "is_published": {
+            "type": "boolean"
+          }
+        }
+      },
+      "UpdatePost": {
         "type": "object",
         "properties": {
           "title": {

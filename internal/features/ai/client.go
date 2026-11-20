@@ -24,7 +24,7 @@ type OpenAIClient struct {
 }
 
 func NewOpenAIClient(endpoint, key, model string) *OpenAIClient {
-	return &OpenAIClient{Endpoint: endpoint, Key: key, Model: model, HTTP: &http.Client{Timeout: 120 * time.Second}}
+	return &OpenAIClient{Endpoint: endpoint, Key: key, Model: model, HTTP: &http.Client{Timeout: 60 * time.Second}}
 }
 
 type chatMessage struct {
@@ -41,8 +41,11 @@ func (o *OpenAIClient) Complete(ctx context.Context, system, user string) (strin
 	if err != nil {
 		return "", err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		strings.TrimRight(o.Endpoint, "/")+"/chat/completions", bytes.NewReader(payload))
+	endpoint := strings.TrimRight(o.Endpoint, "/")
+	if !strings.HasSuffix(endpoint, "/chat/completions") {
+		endpoint += "/chat/completions"
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
 		return "", err
 	}
@@ -51,11 +54,11 @@ func (o *OpenAIClient) Complete(ctx context.Context, system, user string) (strin
 
 	resp, err := o.HTTP.Do(req)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("koneksi ke layanan OpenAI gagal: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return "", fmt.Errorf("OpenAI mengembalikan status %d", resp.StatusCode)
+		return "", fmt.Errorf("layanan OpenAI mengembalikan status %d", resp.StatusCode)
 	}
 
 	var body struct {
@@ -64,7 +67,7 @@ func (o *OpenAIClient) Complete(ctx context.Context, system, user string) (strin
 		} `json:"choices"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return "", err
+		return "", fmt.Errorf("respons OpenAI tidak dapat dibaca: %w", err)
 	}
 	if len(body.Choices) == 0 {
 		return "", errors.New("respons OpenAI kosong")

@@ -10,12 +10,25 @@ func (r *Repository) Create(u *User) error { return r.db.Create(u).Error }
 
 func (r *Repository) Save(u *User) error { return r.db.Save(u).Error }
 
-func (r *Repository) FindByUsername(name string) (*User, error) {
+func (r *Repository) first(query string, args ...interface{}) (*User, error) {
 	var u User
-	if err := r.db.Where("username = ?", name).First(&u).Error; err != nil {
+	if err := r.db.Where(query, args...).First(&u).Error; err != nil {
 		return nil, err
 	}
 	return &u, nil
+}
+
+func (r *Repository) FindByUsername(name string) (*User, error) {
+	return r.first("username = ?", name)
+}
+
+func (r *Repository) FindByEmail(email string) (*User, error) {
+	return r.first("email = ?", email)
+}
+
+// FindByIdentity mencari berdasarkan username ATAU email.
+func (r *Repository) FindByIdentity(identity string) (*User, error) {
+	return r.first("username = ? OR email = ?", identity, identity)
 }
 
 func (r *Repository) FindByID(id uint) (*User, error) {
@@ -24,13 +37,4 @@ func (r *Repository) FindByID(id uint) (*User, error) {
 		return nil, err
 	}
 	return &u, nil
-}
-
-// Exists memeriksa username/email sudah dipakai pengguna lain (selain excludeID).
-func (r *Repository) Exists(username, email string, excludeID uint) (bool, error) {
-	var n int64
-	err := r.db.Model(&User{}).
-		Where("(username = ? OR email = ?) AND id <> ?", username, email, excludeID).
-		Count(&n).Error
-	return n > 0, err
 }

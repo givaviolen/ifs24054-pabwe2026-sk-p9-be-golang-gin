@@ -50,7 +50,7 @@ func Auth(secret string) gin.HandlerFunc {
 // RequireRole membatasi akses hanya untuk role tertentu.
 func RequireRole(role string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if c.GetString("role") != role {
+		if !strings.EqualFold(c.GetString("role"), role) {
 			response.Fail(c, http.StatusForbidden, "Akses ditolak")
 			return
 		}

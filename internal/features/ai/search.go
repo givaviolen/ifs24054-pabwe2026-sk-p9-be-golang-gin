@@ -2,12 +2,12 @@ package ai
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"time"
-
-	"encoding/json"
 )
 
 // Searcher mencari fakta terkini di Search Engine.
@@ -21,7 +21,7 @@ type SearchClient struct {
 }
 
 func NewSearchClient(endpoint string) *SearchClient {
-	return &SearchClient{Endpoint: endpoint, HTTP: &http.Client{Timeout: 20 * time.Second}}
+	return &SearchClient{Endpoint: endpoint, HTTP: &http.Client{Timeout: 8 * time.Second}}
 }
 
 type rawItem struct {
@@ -47,7 +47,7 @@ func (r rawItem) toSource() Source {
 	return s
 }
 
-// Search memanggil GET {endpoint}?q=... dan menerima {"results":[...]} atau {"data":[...]}.
+// Search memanggil GET {endpoint}?q=... dan menerima {"results":[...]}, {"data":[...]}, atau array langsung.
 func (s *SearchClient) Search(ctx context.Context, query string) ([]Source, error) {
 	u, err := url.Parse(s.Endpoint)
 	if err != nil {
@@ -69,18 +69,29 @@ func (s *SearchClient) Search(ctx context.Context, query string) ([]Source, erro
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return nil, fmt.Errorf("search engine mengembalikan status %d", resp.StatusCode)
 	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
 
-	var body struct {
+	var items []rawItem
+	var wrapped struct {
 		Results []rawItem `json:"results"`
 		Data    []rawItem `json:"data"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return nil, err
+	if err := json.Unmarshal(body, &wrapped); err == nil {
+		items = wrapped.Results
+		if len(items) == 0 {
+			items = wrapped.Data
+		}
 	}
-	items := body.Results
 	if len(items) == 0 {
-		items = body.Data
+		var direct []rawItem
+		if err := json.Unmarshal(body, &direct); err == nil {
+			items = direct
+		}
 	}
+
 	sources := make([]Source, 0, 5)
 	for _, it := range items {
 		if len(sources) == 5 {
