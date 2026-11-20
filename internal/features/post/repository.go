@@ -3,85 +3,128 @@ package post
 import (
 	"strings"
 
+	"app/internal/database"
+
 	"gorm.io/gorm"
 )
 
-type Repository struct{ db *gorm.DB }
+type Repository interface {
+	Create(post *database.Post) error
+	FindByID(id uint) (*database.Post, error)
+	FindBySlug(slug string) (*database.Post, error)
+	FindAllPublic(category, query string) ([]database.Post, error)
+	FindByUserID(userID uint) ([]database.Post, error)
+	FindAll() ([]database.Post, error)
+	Update(post *database.Post) error
+	Delete(id uint) error
+	CountStatsByUserID(userID uint) (total int64, selesai int64, belumSelesai int64, err error)
+	FindAdminUsers() ([]AdminUserStatsResponse, error)
+}
 
-func NewRepository(db *gorm.DB) *Repository { return &Repository{db: db} }
+type repository struct {
+	db *gorm.DB
+}
 
-func (r *Repository) ListPublic(q, category string) ([]Post, error) {
-	posts := []Post{}
+func NewRepository(db *gorm.DB) Repository {
+	return &repository{db: db}
+}
+
+func (r *repository) Create(post *database.Post) error {
+	return r.db.Create(post).Error
+}
+
+func (r *repository) FindByID(id uint) (*database.Post, error) {
+	var post database.Post
+	if err := r.db.Preload("User").First(&post, id).Error; err != nil {
+		return nil, err
+	}
+	return &post, nil
+}
+
+func (r *repository) FindBySlug(slug string) (*database.Post, error) {
+	var post database.Post
+	if err := r.db.Preload("User").Where("slug = ? AND is_published = ?", slug, true).First(&post).Error; err != nil {
+		return nil, err
+	}
+	return &post, nil
+}
+
+func (r *repository) FindAllPublic(category, query string) ([]database.Post, error) {
+	var posts []database.Post
 	tx := r.db.Preload("User").Where("is_published = ?", true)
-	if q = strings.ToLower(strings.TrimSpace(q)); q != "" {
-		like := "%" + q + "%"
-		tx = tx.Where("(LOWER(title) LIKE ? OR LOWER(excerpt) LIKE ? OR LOWER(content) LIKE ?)", like, like, like)
-	}
-	if category = strings.TrimSpace(category); category != "" && !strings.EqualFold(category, "Semua") {
-		tx = tx.Where("category = ?", category)
-	}
-	err := tx.Order("published_at DESC, id DESC").Find(&posts).Error
-	return posts, err
-}
 
-func (r *Repository) FindPublicBySlug(slug string) (*Post, error) {
-	var p Post
-	err := r.db.Preload("User").Where("slug = ? AND is_published = ?", slug, true).First(&p).Error
-	if err != nil {
+	category = strings.TrimSpace(category)
+	if category != "" && !strings.EqualFold(category, "Semua") {
+		tx = tx.Where("LOWER(category) = LOWER(?)", category)
+	}
+
+	query = strings.TrimSpace(query)
+	if query != "" {
+		likeQuery := "%" + strings.ToLower(query) + "%"
+		tx = tx.Where("LOWER(title) LIKE ? OR LOWER(excerpt) LIKE ? OR LOWER(content) LIKE ?", likeQuery, likeQuery, likeQuery)
+	}
+
+	if err := tx.Order("published_at DESC, created_at DESC").Find(&posts).Error; err != nil {
 		return nil, err
 	}
-	return &p, nil
+	return posts, nil
 }
 
-func (r *Repository) ListByUser(uid uint) ([]Post, error) {
-	posts := []Post{}
-	err := r.db.Preload("User").Where("user_id = ?", uid).Order("id DESC").Find(&posts).Error
-	return posts, err
-}
-
-func (r *Repository) FindByID(id uint) (*Post, error) {
-	var p Post
-	if err := r.db.Preload("User").First(&p, id).Error; err != nil {
+func (r *repository) FindByUserID(userID uint) ([]database.Post, error) {
+	var posts []database.Post
+	if err := r.db.Where("user_id = ?", userID).Order("created_at DESC").Find(&posts).Error; err != nil {
 		return nil, err
 	}
-	return &p, nil
+	return posts, nil
 }
 
-func (r *Repository) Create(p *Post) error { return r.db.Omit("User").Create(p).Error }
-
-func (r *Repository) Save(p *Post) error { return r.db.Omit("User").Save(p).Error }
-
-func (r *Repository) Delete(id uint) error { return r.db.Delete(&Post{}, id).Error }
-
-func (r *Repository) SlugExists(slug string) (bool, error) {
-	var n int64
-	err := r.db.Model(&Post{}).Where("slug = ?", slug).Count(&n).Error
-	return n > 0, err
-}
-
-func (r *Repository) Stats(uid uint) (total int64, published int64, err error) {
-	if err = r.db.Model(&Post{}).Where("user_id = ?", uid).Count(&total).Error; err != nil {
-		return
+func (r *repository) FindAll() ([]database.Post, error) {
+	var posts []database.Post
+	if err := r.db.Order("created_at DESC").Find(&posts).Error; err != nil {
+		return nil, err
 	}
-	err = r.db.Model(&Post{}).Where("user_id = ? AND is_published = ?", uid, true).Count(&published).Error
-	return
+	return posts, nil
 }
 
-func (r *Repository) ListAll() ([]Post, error) {
-	posts := []Post{}
-	err := r.db.Preload("User").Order("id DESC").Find(&posts).Error
-	return posts, err
+func (r *repository) Update(post *database.Post) error {
+	return r.db.Save(post).Error
 }
 
-func (r *Repository) AdminUsers() ([]AdminUserResponse, error) {
-	out := []AdminUserResponse{}
-	err := r.db.Table("users").
-		Select("users.id, users.username, users.email, users.role, users.created_at, " +
-			"COUNT(posts.id) AS total_articles, " +
-			"COALESCE(SUM(CASE WHEN posts.is_published THEN 1 ELSE 0 END), 0) AS total_published").
-		Joins("LEFT JOIN posts ON posts.user_id = users.id").
-		Group("users.id").
-		Order("users.id").
-		Scan(&out).Error
-	return out, err
+func (r *repository) Delete(id uint) error {
+	return r.db.Delete(&database.Post{}, id).Error
+}
+
+func (r *repository) CountStatsByUserID(userID uint) (int64, int64, int64, error) {
+	var total, selesai int64
+
+	if err := r.db.Model(&database.Post{}).Where("user_id = ?", userID).Count(&total).Error; err != nil {
+		return 0, 0, 0, err
+	}
+	_ = r.db.Model(&database.Post{}).Where("user_id = ? AND is_published = ?", userID, true).Count(&selesai).Error
+	return total, selesai, total - selesai, nil
+}
+
+func (r *repository) FindAdminUsers() ([]AdminUserStatsResponse, error) {
+	var users []database.User
+	if err := r.db.Order("id ASC").Find(&users).Error; err != nil {
+		return nil, err
+	}
+
+	var results []AdminUserStatsResponse
+	for _, u := range users {
+		var total, published int64
+		_ = r.db.Model(&database.Post{}).Where("user_id = ?", u.ID).Count(&total).Error
+		_ = r.db.Model(&database.Post{}).Where("user_id = ? AND is_published = ?", u.ID, true).Count(&published).Error
+
+		results = append(results, AdminUserStatsResponse{
+			ID:             u.ID,
+			Username:       u.Username,
+			Email:          u.Email,
+			Role:           u.Role,
+			TotalArticles:  total,
+			TotalPublished: published,
+			CreatedAt:      u.CreatedAt,
+		})
+	}
+	return results, nil
 }

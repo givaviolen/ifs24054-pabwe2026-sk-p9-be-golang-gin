@@ -1,690 +1,72 @@
 {
-  "openapi": "3.0.3",
+  "swagger": "2.0",
   "info": {
     "title": "Delcom Blog API",
-    "version": "1.0.0",
-    "description": "REST API Delcom Blog (Golang Gin). Format respons: {status, message, data?}"
+    "description": "Dokumentasi REST API Delcom Blog Multi-Tier & AI Generator",
+    "version": "1.0"
   },
-  "servers": [
-    {
-      "url": "/"
-    }
+  "host": "localhost:8081",
+  "basePath": "/api",
+  "schemes": [
+    "http",
+    "https"
   ],
   "paths": {
-    "/": {
+    "/public/categories": {
       "get": {
-        "summary": "Health check",
-        "tags": [
-          "Sistem"
-        ],
+        "summary": "Daftar Kategori Publik",
         "responses": {
-          "200": {
-            "description": "200"
-          }
+          "200": { "description": "Success" }
         }
       }
     },
-    "/api/public/categories": {
+    "/public/posts": {
       "get": {
-        "summary": "Daftar kategori artikel",
-        "tags": [
-          "Publik"
-        ],
-        "responses": {
-          "200": {
-            "description": "200"
-          },
-          "400": {
-            "description": "400"
-          },
-          "404": {
-            "description": "404"
-          }
-        }
-      }
-    },
-    "/api/public/posts": {
-      "get": {
-        "summary": "Daftar artikel terbit (?q=, ?category=)",
-        "tags": [
-          "Publik"
-        ],
-        "responses": {
-          "200": {
-            "description": "200"
-          },
-          "400": {
-            "description": "400"
-          },
-          "404": {
-            "description": "404"
-          }
-        },
+        "summary": "Daftar Artikel Publik",
         "parameters": [
-          {
-            "name": "q",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "category",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ]
-      }
-    },
-    "/api/public/posts/{slug}": {
-      "get": {
-        "summary": "Detail artikel publik berdasarkan slug",
-        "tags": [
-          "Publik"
+          { "name": "category", "in": "query", "type": "string" },
+          { "name": "q", "in": "query", "type": "string" }
         ],
         "responses": {
-          "200": {
-            "description": "200"
-          },
-          "400": {
-            "description": "400"
-          },
-          "404": {
-            "description": "404"
-          }
-        },
-        "parameters": [
-          {
-            "name": "slug",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ]
+          "200": { "description": "Success" }
+        }
       }
     },
-    "/api/auth/register": {
+    "/auth/register": {
       "post": {
-        "summary": "Registrasi akun (role opsional: admin/member)",
-        "tags": [
-          "Auth"
-        ],
+        "summary": "Registrasi Pengguna",
         "responses": {
-          "200": {
-            "description": "200"
-          },
-          "400": {
-            "description": "400"
-          },
-          "404": {
-            "description": "404"
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/Register"
-              }
-            }
-          }
+          "201": { "description": "Created" }
         }
       }
     },
-    "/api/auth/login": {
+    "/auth/login": {
       "post": {
-        "summary": "Login (username atau email) dan terima token JWT",
-        "tags": [
-          "Auth"
-        ],
+        "summary": "Login Pengguna",
         "responses": {
-          "200": {
-            "description": "200"
-          },
-          "400": {
-            "description": "400"
-          },
-          "404": {
-            "description": "404"
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/Login"
-              }
-            }
-          }
+          "200": { "description": "Success" }
         }
       }
     },
-    "/api/auth/logout": {
-      "post": {
-        "summary": "Logout",
-        "tags": [
-          "Auth"
-        ],
-        "responses": {
-          "200": {
-            "description": "200"
-          },
-          "400": {
-            "description": "400"
-          },
-          "404": {
-            "description": "404"
-          }
-        }
-      }
-    },
-    "/api/auth/profile": {
+    "/posts": {
       "get": {
-        "summary": "Profil akun",
-        "tags": [
-          "Auth"
-        ],
+        "summary": "Daftar Artikel Penulis",
         "responses": {
-          "200": {
-            "description": "200"
-          },
-          "400": {
-            "description": "400"
-          },
-          "404": {
-            "description": "404"
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
-      },
-      "put": {
-        "summary": "Perbarui email/password",
-        "tags": [
-          "Auth"
-        ],
-        "responses": {
-          "200": {
-            "description": "200"
-          },
-          "400": {
-            "description": "400"
-          },
-          "404": {
-            "description": "404"
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/Profile"
-              }
-            }
-          }
+          "200": { "description": "Success" }
         }
-      }
-    },
-    "/api/posts": {
-      "get": {
-        "summary": "Artikel milik penulis",
-        "tags": [
-          "Penulis"
-        ],
-        "responses": {
-          "200": {
-            "description": "200"
-          },
-          "400": {
-            "description": "400"
-          },
-          "404": {
-            "description": "404"
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
       },
       "post": {
-        "summary": "Buat artikel",
-        "tags": [
-          "Penulis"
-        ],
+        "summary": "Tambah Artikel",
         "responses": {
-          "200": {
-            "description": "200"
-          },
-          "400": {
-            "description": "400"
-          },
-          "404": {
-            "description": "404"
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreatePost"
-              }
-            }
-          }
+          "201": { "description": "Created" }
         }
       }
     },
-    "/api/posts/stats": {
-      "get": {
-        "summary": "Statistik: total_articles, total_selesai, belum_selesai",
-        "tags": [
-          "Penulis"
-        ],
-        "responses": {
-          "200": {
-            "description": "200"
-          },
-          "400": {
-            "description": "400"
-          },
-          "404": {
-            "description": "404"
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
-      }
-    },
-    "/api/posts/ai-generate": {
+    "/posts/ai-generate": {
       "post": {
-        "summary": "Generate artikel dengan AI + Search Engine",
-        "tags": [
-          "Penulis"
-        ],
+        "summary": "Generate Draf Artikel AI",
         "responses": {
-          "200": {
-            "description": "200"
-          },
-          "400": {
-            "description": "400"
-          },
-          "404": {
-            "description": "404"
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AIGenerate"
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/posts/{id}": {
-      "get": {
-        "summary": "Detail artikel milik penulis",
-        "tags": [
-          "Penulis"
-        ],
-        "responses": {
-          "200": {
-            "description": "200"
-          },
-          "400": {
-            "description": "400"
-          },
-          "404": {
-            "description": "404"
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ]
-      },
-      "put": {
-        "summary": "Perbarui artikel (field kosong diabaikan)",
-        "tags": [
-          "Penulis"
-        ],
-        "responses": {
-          "200": {
-            "description": "200"
-          },
-          "400": {
-            "description": "400"
-          },
-          "404": {
-            "description": "404"
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdatePost"
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "summary": "Hapus artikel",
-        "tags": [
-          "Penulis"
-        ],
-        "responses": {
-          "200": {
-            "description": "200"
-          },
-          "400": {
-            "description": "400"
-          },
-          "404": {
-            "description": "404"
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ]
-      }
-    },
-    "/api/posts/{id}/toggle-publish": {
-      "patch": {
-        "summary": "Toggle Draf/Terbit",
-        "tags": [
-          "Penulis"
-        ],
-        "responses": {
-          "200": {
-            "description": "200"
-          },
-          "400": {
-            "description": "400"
-          },
-          "404": {
-            "description": "404"
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ]
-      }
-    },
-    "/api/admin/users": {
-      "get": {
-        "summary": "Seluruh pengguna + total artikel",
-        "tags": [
-          "Admin"
-        ],
-        "responses": {
-          "200": {
-            "description": "200"
-          },
-          "400": {
-            "description": "400"
-          },
-          "404": {
-            "description": "404"
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
-      }
-    },
-    "/api/admin/posts": {
-      "get": {
-        "summary": "Arsip seluruh artikel",
-        "tags": [
-          "Admin"
-        ],
-        "responses": {
-          "200": {
-            "description": "200"
-          },
-          "400": {
-            "description": "400"
-          },
-          "404": {
-            "description": "404"
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
-      }
-    },
-    "/api/admin/users/{id}/posts": {
-      "get": {
-        "summary": "Artikel milik pengguna tertentu",
-        "tags": [
-          "Admin"
-        ],
-        "responses": {
-          "200": {
-            "description": "200"
-          },
-          "400": {
-            "description": "400"
-          },
-          "404": {
-            "description": "404"
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ]
-      }
-    }
-  },
-  "components": {
-    "securitySchemes": {
-      "bearerAuth": {
-        "type": "http",
-        "scheme": "bearer",
-        "bearerFormat": "JWT"
-      }
-    },
-    "schemas": {
-      "Register": {
-        "type": "object",
-        "properties": {
-          "username": {
-            "type": "string"
-          },
-          "email": {
-            "type": "string"
-          },
-          "password": {
-            "type": "string"
-          },
-          "role": {
-            "type": "string"
-          }
-        }
-      },
-      "Login": {
-        "type": "object",
-        "properties": {
-          "username": {
-            "type": "string"
-          },
-          "password": {
-            "type": "string"
-          }
-        }
-      },
-      "Profile": {
-        "type": "object",
-        "properties": {
-          "email": {
-            "type": "string"
-          },
-          "password": {
-            "type": "string"
-          }
-        }
-      },
-      "CreatePost": {
-        "type": "object",
-        "properties": {
-          "title": {
-            "type": "string"
-          },
-          "category": {
-            "type": "string"
-          },
-          "excerpt": {
-            "type": "string"
-          },
-          "content": {
-            "type": "string"
-          },
-          "cover_image_path": {
-            "type": "string"
-          },
-          "is_published": {
-            "type": "boolean"
-          }
-        }
-      },
-      "UpdatePost": {
-        "type": "object",
-        "properties": {
-          "title": {
-            "type": "string"
-          },
-          "category": {
-            "type": "string"
-          },
-          "excerpt": {
-            "type": "string"
-          },
-          "content": {
-            "type": "string"
-          },
-          "cover_image_path": {
-            "type": "string"
-          },
-          "is_published": {
-            "type": "boolean"
-          }
-        }
-      },
-      "AIGenerate": {
-        "type": "object",
-        "properties": {
-          "topic": {
-            "type": "string"
-          },
-          "category": {
-            "type": "string"
-          },
-          "include_web_search": {
-            "type": "boolean"
-          }
+          "200": { "description": "Success" }
         }
       }
     }

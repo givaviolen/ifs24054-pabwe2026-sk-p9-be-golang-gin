@@ -3,87 +3,80 @@ package post
 import (
 	"errors"
 	"fmt"
+	"math/rand"
 	"regexp"
 	"strings"
 	"time"
+
+	"app/internal/database"
 )
 
 var (
-	ErrNotFound     = errors.New("Artikel tidak ditemukan")
-	ErrForbidden    = errors.New("Anda tidak memiliki izin untuk mengakses artikel ini")
-	ErrInvalidInput = errors.New("Judul dan konten artikel wajib diisi")
+	ErrInvalidInput = errors.New("input tidak valid")
+	ErrPostNotFound = errors.New("artikel tidak ditemukan")
+	ErrForbidden    = errors.New("anda tidak memiliki izin untuk mengakses artikel ini")
 )
 
-// Categories adalah daftar kategori artikel yang valid.
-var Categories = []string{"Teknologi", "Pendidikan", "Gaya Hidup", "Bisnis", "Opini", "Umum"}
-
-var nonAlnum = regexp.MustCompile(`[^a-z0-9]+`)
-
-// Slugify mengubah judul menjadi slug URL.
-func Slugify(s string) string {
-	s = nonAlnum.ReplaceAllString(strings.ToLower(strings.TrimSpace(s)), "-")
-	s = strings.Trim(s, "-")
-	if s == "" {
-		return "artikel"
-	}
-	return s
+var DefaultCategories = []string{
+	"Teknologi",
+	"Pendidikan",
+	"Gaya Hidup",
+	"Bisnis",
+	"Opini",
+	"Umum",
 }
 
-// ReadingTime menghitung estimasi menit baca: jumlah kata / 200 wpm (minimal 1).
-func ReadingTime(content string) int {
-	m := (len(strings.Fields(content)) + 199) / 200
-	if m < 1 {
+type Service interface {
+	GetCategories() []string
+	GetPublicPosts(category, query string) ([]PublicPostResponse, error)
+	GetPublicPostBySlug(slug string) (*PublicPostResponse, error)
+	CreatePost(userID uint, req *CreatePostRequest) (*PostResponse, error)
+	GetAuthorPosts(userID uint) ([]PostResponse, error)
+	GetPostByID(id uint, userID uint, role string) (*PostResponse, error)
+	GetAuthorStats(userID uint) (*AuthorStatsResponse, error)
+	UpdatePost(id uint, userID uint, role string, req *UpdatePostRequest) (*PostResponse, error)
+	TogglePublish(id uint, userID uint, role string) (*PostResponse, error)
+	DeletePost(id uint, userID uint, role string) error
+	GetAdminPosts() ([]PostResponse, error)
+	GetAdminUsers() ([]AdminUserStatsResponse, error)
+	GetAdminUserPosts(targetUserID uint) ([]PostResponse, error)
+}
+
+type service struct {
+	repo Repository
+}
+
+func NewService(repo Repository) Service {
+	return &service{repo: repo}
+}
+
+func (s *service) GetCategories() []string {
+	return DefaultCategories
+}
+
+func CalculateReadingTime(content string) int {
+	words := len(strings.Fields(content))
+	readingTime := words / 200
+	if readingTime < 1 {
 		return 1
 	}
-	return m
+	return readingTime
 }
 
-// NormalizeCategory mengembalikan kategori valid, selain itu "Umum".
-func NormalizeCategory(c string) string {
-	for _, v := range Categories {
-		if strings.EqualFold(v, strings.TrimSpace(c)) {
-			return v
-		}
+var nonAlphanumericRegex = regexp.MustCompile(`[^a-z0-9]+`)
+
+func GenerateSlug(title string) string {
+	lower := strings.ToLower(title)
+	clean := nonAlphanumericRegex.ReplaceAllString(lower, "-")
+	clean = strings.Trim(clean, "-")
+	if clean == "" {
+		clean = "artikel"
 	}
-	return "Umum"
+	uniqueSuffix := fmt.Sprintf("%d%03d", time.Now().UnixNano()%1000000, rand.Intn(1000))
+	return fmt.Sprintf("%s-%s", clean, uniqueSuffix)
 }
 
-// MakeExcerpt membuat ringkasan otomatis (maks 160 karakter) dari isi artikel.
-func MakeExcerpt(content string) string {
-	r := []rune(strings.Join(strings.Fields(content), " "))
-	if len(r) > 160 {
-		return string(r[:160]) + "..."
-	}
-	return string(r)
-}
-
-func trimmed(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return strings.TrimSpace(*s)
-}
-
-func toResponse(p *Post) PostResponse {
-	return PostResponse{
-		ID:             p.ID,
-		UserID:         p.UserID,
-		Title:          p.Title,
-		Slug:           p.Slug,
-		Category:       p.Category,
-		Excerpt:        p.Excerpt,
-		Content:        p.Content,
-		CoverImagePath: p.CoverImagePath,
-		IsPublished:    p.IsPublished,
-		ReadingTime:    ReadingTime(p.Content),
-		AuthorName:     p.User.Username,
-		PublishedAt:    p.PublishedAt,
-		CreatedAt:      p.CreatedAt,
-		UpdatedAt:      p.UpdatedAt,
-	}
-}
-
-func toPublic(p *Post) PublicPostResponse {
+func toPublicPostResponse(p *database.Post) PublicPostResponse {
 	author := "Anonim"
 	if p.User.Username != "" {
 		author = p.User.Username
@@ -97,7 +90,7 @@ func toPublic(p *Post) PublicPostResponse {
 		Content:        p.Content,
 		CoverImagePath: p.CoverImagePath,
 		IsPublished:    p.IsPublished,
-		ReadingTime:    ReadingTime(p.Content),
+		ReadingTime:    CalculateReadingTime(p.Content),
 		AuthorName:     author,
 		PublishedAt:    p.PublishedAt,
 		CreatedAt:      p.CreatedAt,
@@ -105,203 +98,242 @@ func toPublic(p *Post) PublicPostResponse {
 	}
 }
 
-func toResponses(posts []Post) []PostResponse {
-	out := make([]PostResponse, 0, len(posts))
-	for i := range posts {
-		out = append(out, toResponse(&posts[i]))
+func toPostResponse(p *database.Post) PostResponse {
+	author := ""
+	if p.User.Username != "" {
+		author = p.User.Username
 	}
-	return out
-}
-
-func applyPublish(p *Post, publish bool) {
-	p.IsPublished = publish
-	if !publish {
-		p.PublishedAt = nil
-		return
-	}
-	if p.PublishedAt == nil {
-		now := time.Now()
-		p.PublishedAt = &now
-	}
-}
-
-type Service struct{ repo *Repository }
-
-func NewService(repo *Repository) *Service { return &Service{repo: repo} }
-
-func (s *Service) GetCategories() []string { return Categories }
-
-func (s *Service) uniqueSlug(base string) (string, error) {
-	slug := base
-	for i := 2; ; i++ {
-		exists, err := s.repo.SlugExists(slug)
-		if err != nil {
-			return "", err
-		}
-		if !exists {
-			return slug, nil
-		}
-		slug = fmt.Sprintf("%s-%d", base, i)
+	return PostResponse{
+		ID:             p.ID,
+		UserID:         p.UserID,
+		Title:          p.Title,
+		Slug:           p.Slug,
+		Category:       p.Category,
+		Excerpt:        p.Excerpt,
+		Content:        p.Content,
+		CoverImagePath: p.CoverImagePath,
+		IsPublished:    p.IsPublished,
+		ReadingTime:    CalculateReadingTime(p.Content),
+		AuthorName:     author,
+		PublishedAt:    p.PublishedAt,
+		CreatedAt:      p.CreatedAt,
+		UpdatedAt:      p.UpdatedAt,
 	}
 }
 
-// owned memuat artikel dan memastikan milik user (admin boleh semuanya).
-func (s *Service) owned(id, uid uint, role string) (*Post, error) {
-	p, err := s.repo.FindByID(id)
-	if err != nil {
-		return nil, ErrNotFound
-	}
-	if p.UserID != uid && !strings.EqualFold(role, "admin") {
-		return nil, ErrForbidden
-	}
-	return p, nil
-}
-
-func (s *Service) GetPublicPosts(q, category string) ([]PublicPostResponse, error) {
-	posts, err := s.repo.ListPublic(q, category)
+func (s *service) GetPublicPosts(category, query string) ([]PublicPostResponse, error) {
+	posts, err := s.repo.FindAllPublic(category, query)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]PublicPostResponse, 0, len(posts))
+
+	result := make([]PublicPostResponse, 0, len(posts))
 	for i := range posts {
-		out = append(out, toPublic(&posts[i]))
+		result = append(result, toPublicPostResponse(&posts[i]))
 	}
-	return out, nil
+	return result, nil
 }
 
-func (s *Service) GetPublicPost(slug string) (*PublicPostResponse, error) {
-	p, err := s.repo.FindPublicBySlug(slug)
+func (s *service) GetPublicPostBySlug(slug string) (*PublicPostResponse, error) {
+	post, err := s.repo.FindBySlug(slug)
 	if err != nil {
-		return nil, ErrNotFound
+		return nil, ErrPostNotFound
 	}
-	res := toPublic(p)
+	res := toPublicPostResponse(post)
 	return &res, nil
 }
 
-func (s *Service) Create(uid uint, req CreatePostRequest) (*PostResponse, error) {
+func (s *service) CreatePost(userID uint, req *CreatePostRequest) (*PostResponse, error) {
 	title := strings.TrimSpace(req.Title)
 	content := strings.TrimSpace(req.Content)
+
 	if title == "" || content == "" {
 		return nil, ErrInvalidInput
 	}
-	slug, err := s.uniqueSlug(Slugify(title))
-	if err != nil {
-		return nil, err
+
+	category := strings.TrimSpace(req.Category)
+	if category == "" {
+		category = "Umum"
 	}
 
-	p := &Post{
-		UserID:         uid,
-		Title:          title,
-		Slug:           slug,
-		Category:       NormalizeCategory(req.Category),
-		Excerpt:        strings.TrimSpace(req.Excerpt),
-		Content:        content,
-		CoverImagePath: strings.TrimSpace(req.CoverImagePath),
-	}
-	if p.Excerpt == "" {
-		p.Excerpt = MakeExcerpt(content)
-	}
+	isPublished := false
 	if req.IsPublished != nil && *req.IsPublished {
-		applyPublish(p, true)
+		isPublished = true
 	}
-	if err := s.repo.Create(p); err != nil {
+
+	var publishedAt *time.Time
+	if isPublished {
+		now := time.Now()
+		publishedAt = &now
+	}
+
+	post := &database.Post{
+		UserID:         userID,
+		Title:          title,
+		Slug:           GenerateSlug(title),
+		Category:       category,
+		Excerpt:        req.Excerpt,
+		Content:        content,
+		CoverImagePath: req.CoverImagePath,
+		IsPublished:    isPublished,
+		PublishedAt:    publishedAt,
+	}
+
+	if err := s.repo.Create(post); err != nil {
 		return nil, err
 	}
-	res := toResponse(p)
+
+	res := toPostResponse(post)
 	return &res, nil
 }
 
-func (s *Service) ListMine(uid uint) ([]PostResponse, error) {
-	posts, err := s.repo.ListByUser(uid)
+func (s *service) GetAuthorPosts(userID uint) ([]PostResponse, error) {
+	posts, err := s.repo.FindByUserID(userID)
 	if err != nil {
 		return nil, err
 	}
-	return toResponses(posts), nil
+
+	result := make([]PostResponse, 0, len(posts))
+	for i := range posts {
+		result = append(result, toPostResponse(&posts[i]))
+	}
+	return result, nil
 }
 
-func (s *Service) GetMine(id, uid uint, role string) (*PostResponse, error) {
-	p, err := s.owned(id, uid, role)
+func (s *service) GetPostByID(id uint, userID uint, role string) (*PostResponse, error) {
+	post, err := s.repo.FindByID(id)
 	if err != nil {
-		return nil, err
+		return nil, ErrPostNotFound
 	}
-	res := toResponse(p)
+
+	if post.UserID != userID && !strings.EqualFold(role, "admin") {
+		return nil, ErrForbidden
+	}
+
+	res := toPostResponse(post)
 	return &res, nil
 }
 
-func (s *Service) Stats(uid uint) (*StatsResponse, error) {
-	total, published, err := s.repo.Stats(uid)
+func (s *service) GetAuthorStats(userID uint) (*AuthorStatsResponse, error) {
+	total, selesai, belumSelesai, err := s.repo.CountStatsByUserID(userID)
 	if err != nil {
 		return nil, err
 	}
-	return &StatsResponse{TotalArticles: total, TotalSelesai: published, BelumSelesai: total - published}, nil
+	return &AuthorStatsResponse{
+		TotalArticles: total,
+		TotalSelesai:  selesai,
+		BelumSelesai:  belumSelesai,
+	}, nil
 }
 
-func (s *Service) Update(id, uid uint, role string, req UpdatePostRequest) (*PostResponse, error) {
-	p, err := s.owned(id, uid, role)
+func (s *service) UpdatePost(id uint, userID uint, role string, req *UpdatePostRequest) (*PostResponse, error) {
+	post, err := s.repo.FindByID(id)
 	if err != nil {
-		return nil, err
+		return nil, ErrPostNotFound
 	}
-	if v := trimmed(req.Title); v != "" {
-		p.Title = v
+
+	if post.UserID != userID && !strings.EqualFold(role, "admin") {
+		return nil, ErrForbidden
 	}
-	if v := trimmed(req.Category); v != "" {
-		p.Category = NormalizeCategory(v)
+
+	if req.Title != nil && strings.TrimSpace(*req.Title) != "" {
+		post.Title = strings.TrimSpace(*req.Title)
 	}
-	if v := trimmed(req.Excerpt); v != "" {
-		p.Excerpt = v
+	if req.Category != nil && strings.TrimSpace(*req.Category) != "" {
+		post.Category = strings.TrimSpace(*req.Category)
 	}
-	if v := trimmed(req.Content); v != "" {
-		p.Content = v
+	if req.Excerpt != nil && strings.TrimSpace(*req.Excerpt) != "" {
+		post.Excerpt = strings.TrimSpace(*req.Excerpt)
 	}
-	if v := trimmed(req.CoverImagePath); v != "" {
-		p.CoverImagePath = v
+	if req.Content != nil && strings.TrimSpace(*req.Content) != "" {
+		post.Content = strings.TrimSpace(*req.Content)
+	}
+	if req.CoverImagePath != nil && strings.TrimSpace(*req.CoverImagePath) != "" {
+		post.CoverImagePath = strings.TrimSpace(*req.CoverImagePath)
 	}
 	if req.IsPublished != nil {
-		applyPublish(p, *req.IsPublished)
+		post.IsPublished = *req.IsPublished
+		if post.IsPublished && post.PublishedAt == nil {
+			now := time.Now()
+			post.PublishedAt = &now
+		} else if !post.IsPublished {
+			post.PublishedAt = nil
+		}
 	}
-	if err := s.repo.Save(p); err != nil {
+
+	if err := s.repo.Update(post); err != nil {
 		return nil, err
 	}
-	res := toResponse(p)
+
+	res := toPostResponse(post)
 	return &res, nil
 }
 
-// TogglePublish membalik status Draf <-> Terbit beserta published_at.
-func (s *Service) TogglePublish(id, uid uint, role string) (*PostResponse, error) {
-	p, err := s.owned(id, uid, role)
+func (s *service) TogglePublish(id uint, userID uint, role string) (*PostResponse, error) {
+	post, err := s.repo.FindByID(id)
 	if err != nil {
+		return nil, ErrPostNotFound
+	}
+
+	if post.UserID != userID && !strings.EqualFold(role, "admin") {
+		return nil, ErrForbidden
+	}
+
+	post.IsPublished = !post.IsPublished
+	if post.IsPublished {
+		now := time.Now()
+		post.PublishedAt = &now
+	} else {
+		post.PublishedAt = nil
+	}
+
+	if err := s.repo.Update(post); err != nil {
 		return nil, err
 	}
-	p.PublishedAt = nil // setiap kali terbit, waktu publikasi diperbarui
-	applyPublish(p, !p.IsPublished)
-	if err := s.repo.Save(p); err != nil {
-		return nil, err
-	}
-	res := toResponse(p)
+
+	res := toPostResponse(post)
 	return &res, nil
 }
 
-func (s *Service) Delete(id, uid uint, role string) error {
-	if _, err := s.owned(id, uid, role); err != nil {
-		return err
+func (s *service) DeletePost(id uint, userID uint, role string) error {
+	post, err := s.repo.FindByID(id)
+	if err != nil {
+		return ErrPostNotFound
 	}
+
+	if post.UserID != userID && !strings.EqualFold(role, "admin") {
+		return ErrForbidden
+	}
+
 	return s.repo.Delete(id)
 }
 
-func (s *Service) AdminUsers() ([]AdminUserResponse, error) { return s.repo.AdminUsers() }
-
-func (s *Service) AdminPosts() ([]PostResponse, error) {
-	posts, err := s.repo.ListAll()
+func (s *service) GetAdminPosts() ([]PostResponse, error) {
+	posts, err := s.repo.FindAll()
 	if err != nil {
 		return nil, err
 	}
-	return toResponses(posts), nil
+
+	result := make([]PostResponse, 0, len(posts))
+	for i := range posts {
+		result = append(result, toPostResponse(&posts[i]))
+	}
+	return result, nil
 }
 
-func (s *Service) AdminUserPosts(uid uint) ([]PostResponse, error) {
-	posts, err := s.repo.ListByUser(uid)
+func (s *service) GetAdminUsers() ([]AdminUserStatsResponse, error) {
+	return s.repo.FindAdminUsers()
+}
+
+func (s *service) GetAdminUserPosts(targetUserID uint) ([]PostResponse, error) {
+	posts, err := s.repo.FindByUserID(targetUserID)
 	if err != nil {
 		return nil, err
 	}
-	return toResponses(posts), nil
+
+	result := make([]PostResponse, 0, len(posts))
+	for i := range posts {
+		result = append(result, toPostResponse(&posts[i]))
+	}
+	return result, nil
 }

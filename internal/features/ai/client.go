@@ -2,75 +2,73 @@ package ai
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
 )
 
-// Completer mengirim prompt ke OpenAI Chat Completions.
-type Completer interface {
-	Complete(ctx context.Context, system, user string) (string, error)
+type OpenAIClient interface {
+	ChatCompletion(req *OpenAIChatRequest) (*OpenAIChatResponse, error)
 }
 
-type OpenAIClient struct {
-	Endpoint string
-	Key      string
-	Model    string
-	HTTP     *http.Client
+type openAIClient struct {
+	endpoint   string
+	apiKey     string
+	httpClient *http.Client
 }
 
-func NewOpenAIClient(endpoint, key, model string) *OpenAIClient {
-	return &OpenAIClient{Endpoint: endpoint, Key: key, Model: model, HTTP: &http.Client{Timeout: 60 * time.Second}}
-}
-
-type chatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-func (o *OpenAIClient) Complete(ctx context.Context, system, user string) (string, error) {
-	payload, err := json.Marshal(map[string]interface{}{
-		"model":       o.Model,
-		"temperature": 0.7,
-		"messages":    []chatMessage{{Role: "system", Content: system}, {Role: "user", Content: user}},
-	})
-	if err != nil {
-		return "", err
+func NewOpenAIClient(endpoint, apiKey string, customClient ...*http.Client) OpenAIClient {
+	client := &http.Client{Timeout: 60 * time.Second}
+	if len(customClient) > 0 && customClient[0] != nil {
+		client = customClient[0]
 	}
-	endpoint := strings.TrimRight(o.Endpoint, "/")
-	if !strings.HasSuffix(endpoint, "/chat/completions") {
-		endpoint += "/chat/completions"
+	cleanEndpoint := strings.TrimRight(endpoint, "/")
+	if !strings.HasSuffix(cleanEndpoint, "/chat/completions") {
+		cleanEndpoint = cleanEndpoint + "/chat/completions"
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
-	if err != nil {
-		return "", err
+	return &openAIClient{
+		endpoint:   cleanEndpoint,
+		apiKey:     apiKey,
+		httpClient: client,
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+o.Key)
+}
 
-	resp, err := o.HTTP.Do(req)
+func (c *openAIClient) ChatCompletion(req *OpenAIChatRequest) (*OpenAIChatResponse, error) {
+	reqBytes, _ := json.Marshal(req)
+	httpReq, _ := http.NewRequest(http.MethodPost, c.endpoint, bytes.NewBuffer(reqBytes))
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		return "", fmt.Errorf("koneksi ke layanan OpenAI gagal: %w", err)
+		return nil, fmt.Errorf("koneksi ke layanan OpenAI gagal: %w", err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return "", fmt.Errorf("layanan OpenAI mengembalikan status %d", resp.StatusCode)
+
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("layanan OpenAI mengembalikan status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var body struct {
-		Choices []struct {
-			Message chatMessage `json:"message"`
-		} `json:"choices"`
+	var chatResp OpenAIChatResponse
+	if err := json.Unmarshal(body, &chatResp); err != nil {
+		return nil, fmt.Errorf("gagal parse respons JSON OpenAI: %w", err)
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return "", fmt.Errorf("respons OpenAI tidak dapat dibaca: %w", err)
+
+	if chatResp.Error != nil {
+		return nil, fmt.Errorf("kesalahan OpenAI API: %s", chatResp.Error.Message)
 	}
-	if len(body.Choices) == 0 {
-		return "", errors.New("respons OpenAI kosong")
+
+	if len(chatResp.Choices) == 0 {
+		return nil, fmt.Errorf("layanan OpenAI tidak menghasilkan respon (pilihan kosong)")
 	}
-	return body.Choices[0].Message.Content, nil
+
+	return &chatResp, nil
 }

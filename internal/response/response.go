@@ -1,26 +1,46 @@
 package response
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 )
 
-// Body adalah format JSON standar: {status, message, data?}.
-type Body struct {
+type Response struct {
 	Status  string      `json:"status"`
 	Message string      `json:"message"`
 	Data    interface{} `json:"data,omitempty"`
 }
 
-func Success(c *gin.Context, code int, message string, data interface{}) {
-	c.JSON(code, Body{Status: "success", Message: message, Data: data})
+func Success(c *gin.Context, code int, message string, data ...interface{}) {
+	resp := gin.H{
+		"status":  "success",
+		"message": message,
+	}
+	if len(data) > 0 && data[0] != nil {
+		resp["data"] = data[0]
+	}
+	c.JSON(code, resp)
 }
 
 func Fail(c *gin.Context, code int, message string) {
-	c.AbortWithStatusJSON(code, Body{Status: "fail", Message: message})
+	c.JSON(code, gin.H{
+		"status":  "fail",
+		"message": message,
+	})
 }
 
-func Error(c *gin.Context, message string) {
-	c.AbortWithStatusJSON(http.StatusInternalServerError, Body{Status: "error", Message: message})
+func Error(c *gin.Context, code int, message string) {
+	c.JSON(code, gin.H{
+		"status":  "error",
+		"message": message,
+	})
+}
+
+func AbortFail(c *gin.Context, code int, message string) {
+	Fail(c, code, message)
+	c.Abort()
+}
+
+func AbortError(c *gin.Context, code int, message string) {
+	Error(c, code, message)
+	c.Abort()
 }

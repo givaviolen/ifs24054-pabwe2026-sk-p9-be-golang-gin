@@ -1,29 +1,6 @@
 package post
 
-import (
-	"time"
-
-	"app/internal/features/auth"
-)
-
-// Post adalah model tabel posts.
-type Post struct {
-	ID             uint       `gorm:"primaryKey"`
-	UserID         uint       `gorm:"not null;index"`
-	User           auth.User  `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
-	Title          string     `gorm:"size:255;not null"`
-	Slug           string     `gorm:"size:255;uniqueIndex;not null"`
-	Category       string     `gorm:"size:100"`
-	Excerpt        string     `gorm:"type:text"`
-	Content        string     `gorm:"type:text"`
-	CoverImagePath string     `gorm:"type:text"`
-	IsPublished    bool
-	PublishedAt    *time.Time
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-}
-
-func (Post) TableName() string { return "posts" }
+import "time"
 
 type CreatePostRequest struct {
 	Title          string `json:"title"`
@@ -34,7 +11,6 @@ type CreatePostRequest struct {
 	IsPublished    *bool  `json:"is_published"`
 }
 
-// UpdatePostRequest: semua field opsional; field kosong tidak menimpa data lama.
 type UpdatePostRequest struct {
 	Title          *string `json:"title"`
 	Category       *string `json:"category"`
@@ -44,7 +20,6 @@ type UpdatePostRequest struct {
 	IsPublished    *bool   `json:"is_published"`
 }
 
-// PublicPostResponse tidak memuat user_id maupun data sensitif.
 type PublicPostResponse struct {
 	ID             uint       `json:"id"`
 	Title          string     `json:"title"`
@@ -78,13 +53,13 @@ type PostResponse struct {
 	UpdatedAt      time.Time  `json:"updated_at"`
 }
 
-type StatsResponse struct {
+type AuthorStatsResponse struct {
 	TotalArticles int64 `json:"total_articles"`
 	TotalSelesai  int64 `json:"total_selesai"`
 	BelumSelesai  int64 `json:"belum_selesai"`
 }
 
-type AdminUserResponse struct {
+type AdminUserStatsResponse struct {
 	ID             uint      `json:"id"`
 	Username       string    `json:"username"`
 	Email          string    `json:"email"`

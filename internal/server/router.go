@@ -1,8 +1,8 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
-	"time"
 
 	"app/docs"
 	"app/internal/config"
@@ -18,76 +18,102 @@ import (
 	"gorm.io/gorm"
 )
 
-// Deps memungkinkan klien Search Engine & OpenAI diganti (mis. saat testing).
-type Deps struct {
-	Searcher  ai.Searcher
-	Completer ai.Completer
-}
-
-func NewRouter(cfg *config.Config, db *gorm.DB, deps *Deps) *gin.Engine {
-	if cfg.AppEnv == "production" {
-		gin.SetMode(gin.ReleaseMode)
-	}
-	if deps == nil {
-		deps = &Deps{}
-	}
-	if deps.Searcher == nil {
-		deps.Searcher = ai.NewSearchClient(cfg.SearchEngineEndpoint)
-	}
-	if deps.Completer == nil {
-		deps.Completer = ai.NewOpenAIClient(cfg.OpenAIEndpoint, cfg.OpenAIKey, cfg.OpenAIModel)
-	}
-
-	authH := auth.NewHandler(auth.NewService(auth.NewRepository(db), cfg.AppKey, cfg.AllowAdminRegister))
-	postH := post.NewHandler(post.NewService(post.NewRepository(db)))
-	aiH := ai.NewHandler(ai.NewService(deps.Searcher, deps.Completer))
-
+func SetupRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 	r := gin.New()
-	r.Use(gin.Logger(), gin.Recovery(), middleware.CORS())
+	r.Use(gin.Recovery())
+	r.Use(middleware.CORS())
+	r.Use(middleware.RateLimiter())
 
-	// Health check / base URL
-	r.GET("/", func(c *gin.Context) {
+	// Initialize repositories, services, handlers
+	authRepo := auth.NewRepository(db)
+	authSvc := auth.NewService(authRepo, cfg.AppKey)
+	authHandler := auth.NewHandler(authSvc)
+
+	postRepo := post.NewRepository(db)
+	postSvc := post.NewService(postRepo)
+	postHandler := post.NewHandler(postSvc)
+
+	searchClient := ai.NewSearchClient(cfg.SearchEngineEndpoint)
+	openAIClient := ai.NewOpenAIClient(cfg.OpenAIEndpoint, cfg.OpenAIKey)
+	aiSvc := ai.NewService(cfg, openAIClient, searchClient)
+	aiHandler := ai.NewHandler(aiSvc)
+
+	// Swagger UI & dynamic OpenAPI JSON
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	r.GET("/api.json", func(c *gin.Context) {
+		scheme := "http"
+		if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
+			scheme = "https"
+		}
+		doc, _ := docs.GetSwaggerJSON(c.Request.Host, scheme)
+		var parsed map[string]interface{}
+		_ = json.Unmarshal([]byte(doc), &parsed)
+		c.JSON(http.StatusOK, parsed)
+	})
+
+	// Health check / base URL: GET / membalas JSON standar
+	healthHandler := func(c *gin.Context) {
 		response.Success(c, http.StatusOK, "Delcom Blog API berjalan", gin.H{
 			"name":    "Delcom Blog API",
 			"version": "1.0.0",
 		})
-	})
+	}
+	r.GET("/", healthHandler)
 
-	// Swagger UI & spesifikasi OpenAPI
-	r.GET("/api.json", func(c *gin.Context) { c.Data(http.StatusOK, "application/json", docs.Spec) })
-	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler, ginSwagger.URL("/api.json")))
-
-	api := r.Group("/api")
-
-	pub := api.Group("/public")
-	pub.GET("/categories", postH.Categories)
-	pub.GET("/posts", postH.PublicList)
-	pub.GET("/posts/:slug", postH.PublicDetail)
-
-	a := api.Group("/auth")
-	a.POST("/register", authH.Register)
-	a.POST("/login", authH.Login)
-	a.POST("/logout", authH.Logout)
-	a.GET("/profile", middleware.Auth(cfg.AppKey), authH.Profile)
-	a.PUT("/profile", middleware.Auth(cfg.AppKey), authH.UpdateProfile)
-
-	p := api.Group("/posts", middleware.Auth(cfg.AppKey))
-	p.GET("", postH.List)
-	p.POST("", postH.Create)
-	p.GET("/stats", postH.Stats)
-	p.POST("/ai-generate", middleware.RateLimiter(30, time.Minute), aiH.Generate)
-	p.GET("/:id", postH.Detail)
-	p.PUT("/:id", postH.Update)
-	p.PATCH("/:id/toggle-publish", postH.TogglePublish)
-	p.DELETE("/:id", postH.Delete)
-
-	adm := api.Group("/admin", middleware.Auth(cfg.AppKey), middleware.RequireRole("admin"))
-	adm.GET("/users", postH.AdminUsers)
-	adm.GET("/posts", postH.AdminPosts)
-	adm.GET("/users/:id/posts", postH.AdminUserPosts)
-
+	// 404 NoRoute handler
 	r.NoRoute(func(c *gin.Context) {
 		response.Fail(c, http.StatusNotFound, "Endpoint not found")
 	})
+
+	// Main API Group
+	api := r.Group("/api")
+	{
+		// 1. Public Endpoints
+		public := api.Group("/public")
+		{
+			public.GET("/categories", postHandler.GetCategories)
+			public.GET("/posts", postHandler.GetPublicPosts)
+			public.GET("/posts/:slug", postHandler.GetPublicPostBySlug)
+		}
+
+		// 2. Auth Endpoints
+		authGroup := api.Group("/auth")
+		{
+			authGroup.POST("/register", authHandler.Register)
+			authGroup.POST("/login", authHandler.Login)
+			authGroup.POST("/logout", authHandler.Logout)
+
+			authProtected := authGroup.Group("")
+			authProtected.Use(middleware.Auth(cfg.AppKey))
+			{
+				authProtected.GET("/profile", authHandler.GetProfile)
+				authProtected.PUT("/profile", authHandler.UpdateProfile)
+			}
+		}
+
+		// 3. Author Posts Endpoints (Protected)
+		postGroup := api.Group("/posts")
+		postGroup.Use(middleware.Auth(cfg.AppKey))
+		{
+			postGroup.GET("", postHandler.GetAuthorPosts)
+			postGroup.POST("", postHandler.CreatePost)
+			postGroup.GET("/stats", postHandler.GetAuthorStats)
+			postGroup.POST("/ai-generate", aiHandler.GenerateDraft)
+			postGroup.GET("/:id", postHandler.GetPostByID)
+			postGroup.PUT("/:id", postHandler.UpdatePost)
+			postGroup.PATCH("/:id/toggle-publish", postHandler.TogglePublish)
+			postGroup.DELETE("/:id", postHandler.DeletePost)
+		}
+
+		// 4. Admin Endpoints (Protected + Role Admin)
+		adminGroup := api.Group("/admin")
+		adminGroup.Use(middleware.Auth(cfg.AppKey), middleware.RequireRole("admin"))
+		{
+			adminGroup.GET("/posts", postHandler.GetAdminPosts)
+			adminGroup.GET("/users", postHandler.GetAdminUsers)
+			adminGroup.GET("/users/:id/posts", postHandler.GetAdminUserPosts)
+		}
+	}
+
 	return r
 }

@@ -1,7 +1,6 @@
 package ai
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,94 +9,59 @@ import (
 	"time"
 )
 
-// Searcher mencari fakta terkini di Search Engine.
-type Searcher interface {
-	Search(ctx context.Context, query string) ([]Source, error)
+type SearchClient interface {
+	Search(query string) ([]SearchResultItem, error)
 }
 
-type SearchClient struct {
-	Endpoint string
-	HTTP     *http.Client
+type searchClient struct {
+	endpoint   string
+	httpClient *http.Client
 }
 
-func NewSearchClient(endpoint string) *SearchClient {
-	return &SearchClient{Endpoint: endpoint, HTTP: &http.Client{Timeout: 8 * time.Second}}
+func NewSearchClient(endpoint string, customClient ...*http.Client) SearchClient {
+	client := &http.Client{Timeout: 10 * time.Second}
+	if len(customClient) > 0 && customClient[0] != nil {
+		client = customClient[0]
+	}
+	return &searchClient{
+		endpoint:   endpoint,
+		httpClient: client,
+	}
 }
 
-type rawItem struct {
-	Title       string `json:"title"`
-	URL         string `json:"url"`
-	Link        string `json:"link"`
-	Snippet     string `json:"snippet"`
-	Content     string `json:"content"`
-	Description string `json:"description"`
+type searchResponseWrapper struct {
+	Data []SearchResultItem `json:"data"`
 }
 
-func (r rawItem) toSource() Source {
-	s := Source{Title: r.Title, URL: r.URL, Snippet: r.Snippet}
-	if s.URL == "" {
-		s.URL = r.Link
+func (s *searchClient) Search(query string) ([]SearchResultItem, error) {
+	if s.endpoint == "" || query == "" {
+		return nil, nil
 	}
-	if s.Snippet == "" {
-		s.Snippet = r.Content
-	}
-	if s.Snippet == "" {
-		s.Snippet = r.Description
-	}
-	return s
-}
 
-// Search memanggil GET {endpoint}?q=... dan menerima {"results":[...]}, {"data":[...]}, atau array langsung.
-func (s *SearchClient) Search(ctx context.Context, query string) ([]Source, error) {
-	u, err := url.Parse(s.Endpoint)
-	if err != nil {
-		return nil, err
-	}
-	q := u.Query()
-	q.Set("q", query)
-	u.RawQuery = q.Encode()
+	searchURL := fmt.Sprintf("%s?q=%s", s.endpoint, url.QueryEscape(query))
+	req, _ := http.NewRequest(http.MethodGet, searchURL, nil)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := s.HTTP.Do(req)
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, fmt.Errorf("search engine mengembalikan status %d", resp.StatusCode)
-	}
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("search engine returned status: %d", resp.StatusCode)
 	}
 
-	var items []rawItem
-	var wrapped struct {
-		Results []rawItem `json:"results"`
-		Data    []rawItem `json:"data"`
-	}
-	if err := json.Unmarshal(body, &wrapped); err == nil {
-		items = wrapped.Results
-		if len(items) == 0 {
-			items = wrapped.Data
-		}
-	}
-	if len(items) == 0 {
-		var direct []rawItem
-		if err := json.Unmarshal(body, &direct); err == nil {
-			items = direct
-		}
+	body, _ := io.ReadAll(resp.Body)
+
+	var directList []SearchResultItem
+	if err := json.Unmarshal(body, &directList); err == nil && len(directList) > 0 {
+		return directList, nil
 	}
 
-	sources := make([]Source, 0, 5)
-	for _, it := range items {
-		if len(sources) == 5 {
-			break
-		}
-		sources = append(sources, it.toSource())
+	var wrapped searchResponseWrapper
+	if err := json.Unmarshal(body, &wrapped); err == nil && len(wrapped.Data) > 0 {
+		return wrapped.Data, nil
 	}
-	return sources, nil
+
+	return nil, nil
 }

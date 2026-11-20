@@ -1,7 +1,7 @@
 # Environment files
 .env
 
-# Binaries - HARUS diawali "/" agar folder internal/server/ tidak ikut terabaikan (Jenkins)
+# Binaries - MUST start with leading slash to avoid ignoring internal/server/
 /server
 /server.exe
 /main
@@ -13,13 +13,10 @@
 *.out
 *.test
 coverage.html
-.trivy-cache/
-trivy-results.sarif
-latest-app.zip
 
 # IDE & OS
 .vscode/
 .idea/
 *.swp
-.DS_Store
+*.DS_Store
 Thumbs.db

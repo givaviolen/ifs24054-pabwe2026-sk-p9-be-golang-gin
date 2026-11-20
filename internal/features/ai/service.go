@@ -1,110 +1,123 @@
 package ai
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
-	"app/internal/features/post"
+	"app/internal/config"
 )
 
-const systemPrompt = `Anda adalah penulis blog profesional berbahasa Indonesia.
-Tulis artikel utuh, menarik, dan terstruktur dalam format Markdown (gunakan heading ##, daftar, dan paragraf).
-Jika diberikan "KONTEKS PENELUSURAN", gunakan sebagai rujukan fakta terkini dan sebutkan sitasi dengan format [1], [2], dst.
-Balas HANYA dengan satu objek JSON tanpa teks lain dan tanpa blok kode, dengan kunci:
-"title" (string), "category" (salah satu: Teknologi, Pendidikan, Gaya Hidup, Bisnis, Opini, Umum),
-"excerpt" (ringkasan pemikat 1-2 kalimat), "content" (isi artikel Markdown).`
+var (
+	ErrTopicRequired = errors.New("field topic wajib diisi")
+)
 
-var ErrEmptyOutput = errors.New("respons OpenAI tidak berisi artikel")
-
-type Service struct {
-	search Searcher
-	llm    Completer
+type Service interface {
+	GenerateDraft(req *GenerateDraftRequest) (*DraftResponse, error)
 }
 
-func NewService(s Searcher, c Completer) *Service { return &Service{search: s, llm: c} }
-
-func buildPrompt(req GenerateRequest, sources []Source) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "Topik artikel: %s\n", req.Topic)
-	if req.Category != "" {
-		fmt.Fprintf(&b, "Kategori yang diinginkan: %s\n", req.Category)
-	}
-	if len(sources) > 0 {
-		b.WriteString("\nKONTEKS PENELUSURAN:\n")
-		for i, s := range sources {
-			fmt.Fprintf(&b, "[%d] %s (%s)\n%s\n", i+1, s.Title, s.URL, s.Snippet)
-		}
-	}
-	return b.String()
+type service struct {
+	openAIClient OpenAIClient
+	searchClient SearchClient
+	model        string
 }
 
-// parseArticle mengambil objek JSON dari keluaran model (menoleransi ```json fences).
-func parseArticle(raw string) (*GeneratedPost, bool) {
-	start, end := strings.Index(raw, "{"), strings.LastIndex(raw, "}")
-	if start < 0 || end <= start {
-		return nil, false
+func NewService(cfg *config.Config, openAIClient OpenAIClient, searchClient SearchClient) Service {
+	model := cfg.OpenAIModel
+	if model == "" {
+		model = "gpt-4o-mini"
 	}
-	var g GeneratedPost
-	if err := json.Unmarshal([]byte(raw[start:end+1]), &g); err != nil {
-		return nil, false
+	return &service{
+		openAIClient: openAIClient,
+		searchClient: searchClient,
+		model:        model,
 	}
-	if strings.TrimSpace(g.Content) == "" {
-		return nil, false
-	}
-	return &g, true
 }
 
-// Generate menghasilkan draf artikel; jika pencarian gagal, artikel tetap dibuat tanpa sumber.
-func (s *Service) Generate(ctx context.Context, req GenerateRequest) (*GeneratedPost, error) {
+var jsonBlockRegex = regexp.MustCompile("(?s)```(?:json)?\\s*(\\{.*?\\})\\s*```")
+
+func cleanJSONResponse(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if matches := jsonBlockRegex.FindStringSubmatch(raw); len(matches) > 1 {
+		return strings.TrimSpace(matches[1])
+	}
+	start := strings.Index(raw, "{")
+	end := strings.LastIndex(raw, "}")
+	if start != -1 && end != -1 && end > start {
+		return raw[start : end+1]
+	}
+	return raw
+}
+
+func (s *service) GenerateDraft(req *GenerateDraftRequest) (*DraftResponse, error) {
 	topic := strings.TrimSpace(req.Topic)
-	req.Topic = topic
+	if topic == "" {
+		return nil, ErrTopicRequired
+	}
 
-	useSearch := req.IncludeWebSearch == nil || *req.IncludeWebSearch
-	sources := []Source{}
-	if useSearch {
-		if found, err := s.search.Search(ctx, topic); err == nil {
-			sources = found
+	category := strings.TrimSpace(req.Category)
+	if category == "" {
+		category = "Umum"
+	}
+
+	var searchSources []SearchResultItem
+	searchContext := ""
+	if req.IncludeWebSearch && s.searchClient != nil {
+		results, err := s.searchClient.Search(topic)
+		if err == nil && len(results) > 0 {
+			searchSources = results
+			searchContext = "\n\nBerikut konteks informasi aktual dari mesin pencari untuk dijadikan referensi:\n"
+			for i, r := range results {
+				if i >= 5 {
+					break
+				}
+				searchContext += fmt.Sprintf("- [%s] (%s): %s\n", r.Title, r.URL, r.Snippet)
+			}
 		}
 	}
 
-	raw, err := s.llm.Complete(ctx, systemPrompt, buildPrompt(req, sources))
+	systemPrompt := "Anda adalah asisten penulis artikel blog profesional. Tulislah draf artikel blog yang informatif, menarik, dan terstruktur rapi dalam format Markdown. " +
+		"Berikan respon HANYA dalam bentuk JSON valid dengan format: " +
+		"{\"title\": \"string\", \"category\": \"string\", \"excerpt\": \"string\", \"content\": \"string Markdown lengkap minimal 200 kata\"}."
+
+	userPrompt := fmt.Sprintf("Topik Artikel: %s\nKategori: %s%s\n\nBuat draf artikel lengkap sekarang:", topic, category, searchContext)
+
+	chatReq := &OpenAIChatRequest{
+		Model: s.model,
+		Messages: []OpenAIChatMessage{
+			{Role: "system", Content: systemPrompt},
+			{Role: "user", Content: userPrompt},
+		},
+		Temperature: 0.7,
+	}
+
+	chatResp, err := s.openAIClient.ChatCompletion(chatReq)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("layanan OpenAI bermasalah: %w", err)
 	}
 
-	g, ok := parseArticle(raw)
-	if !ok {
-		// Model membalas teks Markdown biasa: pakai apa adanya sebagai isi artikel.
-		g = &GeneratedPost{Title: topic, Content: strings.TrimSpace(raw)}
-	}
-	if strings.TrimSpace(g.Content) == "" {
-		return nil, ErrEmptyOutput
-	}
-	if strings.TrimSpace(g.Title) == "" {
-		g.Title = topic
-	}
-	if strings.TrimSpace(g.Excerpt) == "" {
-		g.Excerpt = post.MakeExcerpt(g.Content)
-	}
+	rawContent := chatResp.Choices[0].Message.Content
+	cleanedJSON := cleanJSONResponse(rawContent)
 
-	if req.Category != "" {
-		g.Category = post.NormalizeCategory(req.Category)
-	} else {
-		g.Category = post.NormalizeCategory(g.Category)
-	}
-
-	g.Sources = sources
-	if len(sources) > 0 {
-		var b strings.Builder
-		b.WriteString(strings.TrimSpace(g.Content))
-		b.WriteString("\n\n## Sumber Rujukan\n")
-		for i, src := range sources {
-			fmt.Fprintf(&b, "%d. [%s](%s)\n", i+1, src.Title, src.URL)
+	var draft DraftResponse
+	if err := json.Unmarshal([]byte(cleanedJSON), &draft); err != nil {
+		// Fallback if model returned plain text markdown
+		draft = DraftResponse{
+			Title:    topic,
+			Category: category,
+			Excerpt:  fmt.Sprintf("Artikel ulasan tentang %s.", topic),
+			Content:  rawContent,
 		}
-		g.Content = b.String()
 	}
-	return g, nil
+
+	if draft.Category == "" {
+		draft.Category = category
+	}
+	if len(searchSources) > 0 {
+		draft.Sources = searchSources
+	}
+
+	return &draft, nil
 }

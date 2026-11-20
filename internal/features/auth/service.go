@@ -2,181 +2,168 @@ package auth
 
 import (
 	"errors"
-	"fmt"
 	"net/mail"
 	"strings"
-	"time"
 
-	"github.com/golang-jwt/jwt/v5"
+	"app/internal/database"
+	"app/internal/middleware"
+
 	"golang.org/x/crypto/bcrypt"
 )
 
 var (
-	ErrInvalidInput       = errors.New("Input tidak valid")
-	ErrDuplicateUser      = errors.New("Username atau email sudah terdaftar")
-	ErrInvalidCredentials = errors.New("Username atau password salah")
-	ErrUserNotFound       = errors.New("Pengguna tidak ditemukan")
+	ErrInvalidInput       = errors.New("input tidak valid")
+	ErrDuplicateUser      = errors.New("username atau email sudah terdaftar")
+	ErrInvalidCredentials = errors.New("kredensial tidak valid")
+	ErrUserNotFound       = errors.New("pengguna tidak ditemukan")
 )
 
-type Claims struct {
-	UserID   uint   `json:"uid"`
-	Username string `json:"username"`
-	Role     string `json:"role"`
-	jwt.RegisteredClaims
+type Service interface {
+	Register(req *RegisterRequest) (*AuthResponse, error)
+	Login(req *LoginRequest) (*AuthResponse, error)
+	GetProfile(userID uint) (*database.User, error)
+	UpdateProfile(userID uint, req *UpdateProfileRequest) (*database.User, error)
 }
 
-func HashPassword(p string) (string, error) {
-	b, err := bcrypt.GenerateFromPassword([]byte(p), bcrypt.DefaultCost)
-	return string(b), err
+type service struct {
+	repo      Repository
+	secretKey string
 }
 
-func GenerateToken(secret string, u *User) (string, error) {
-	claims := Claims{
-		UserID:   u.ID,
-		Username: u.Username,
-		Role:     u.Role,
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-		},
+func NewService(repo Repository, secretKey string) Service {
+	return &service{
+		repo:      repo,
+		secretKey: secretKey,
 	}
-	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))
 }
 
-func ParseToken(secret, token string) (*Claims, error) {
-	claims := &Claims{}
-	t, err := jwt.ParseWithClaims(token, claims, func(t *jwt.Token) (interface{}, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, errors.New("metode tanda tangan tidak valid")
-		}
-		return []byte(secret), nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	if !t.Valid {
-		return nil, errors.New("token tidak valid")
-	}
-	return claims, nil
-}
-
-func validEmail(email string) bool {
-	addr, err := mail.ParseAddress(email)
-	if err != nil || addr.Address != email {
+func isValidEmail(email string) bool {
+	if email == "" {
 		return false
 	}
-	parts := strings.Split(email, "@")
-	return len(parts) == 2 && strings.Contains(parts[1], ".")
+	addr, err := mail.ParseAddress(email)
+	if err != nil {
+		return false
+	}
+	parts := strings.Split(addr.Address, "@")
+	if len(parts) != 2 {
+		return false
+	}
+	return strings.Contains(parts[1], ".")
 }
 
-type Service struct {
-	repo       *Repository
-	secret     string
-	allowAdmin bool
-}
+func (s *service) Register(req *RegisterRequest) (*AuthResponse, error) {
+	req.Username = strings.TrimSpace(req.Username)
+	req.Email = strings.TrimSpace(req.Email)
 
-func NewService(repo *Repository, secret string, allowAdmin bool) *Service {
-	return &Service{repo: repo, secret: secret, allowAdmin: allowAdmin}
-}
-
-func (s *Service) Register(req RegisterRequest) (*AuthResponse, error) {
-	username := strings.TrimSpace(req.Username)
-	email := strings.ToLower(strings.TrimSpace(req.Email))
-
-	if len(username) < 3 {
-		return nil, fmt.Errorf("%w: username minimal 3 karakter", ErrInvalidInput)
-	}
-	if !validEmail(email) {
-		return nil, fmt.Errorf("%w: format email salah", ErrInvalidInput)
-	}
-	if len(req.Password) < 6 {
-		return nil, fmt.Errorf("%w: password minimal 6 karakter", ErrInvalidInput)
+	if req.Username == "" || !isValidEmail(req.Email) || len(req.Password) < 6 {
+		return nil, ErrInvalidInput
 	}
 
-	// Role hanya "admin" / "member"; selain itu dipaksa "member".
+	// Role validation: only "admin" or "member", otherwise forced to "member"
 	role := "member"
-	if s.allowAdmin && strings.EqualFold(strings.TrimSpace(req.Role), "admin") {
+	if strings.EqualFold(req.Role, "admin") {
 		role = "admin"
 	}
 
-	if u, _ := s.repo.FindByUsername(username); u != nil {
+	// Duplicate check
+	if existing, _ := s.repo.FindByUsername(req.Username); existing != nil {
 		return nil, ErrDuplicateUser
 	}
-	if u, _ := s.repo.FindByEmail(email); u != nil {
+	if existing, _ := s.repo.FindByEmail(req.Email); existing != nil {
 		return nil, ErrDuplicateUser
 	}
 
-	hash, err := HashPassword(req.Password)
-	if err != nil {
-		return nil, err
+	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+
+	user := &database.User{
+		Username: req.Username,
+		Email:    req.Email,
+		Password: string(hashedPassword),
+		Role:     role,
 	}
-	user := &User{Username: username, Email: email, Password: hash, Role: role}
+
 	if err := s.repo.Create(user); err != nil {
 		return nil, err
 	}
-	return s.authResponse(user)
+
+	token, _ := middleware.GenerateToken(user.ID, user.Username, user.Email, user.Role, s.secretKey)
+
+	return &AuthResponse{
+		Token: token,
+		User: UserResponse{
+			ID:       user.ID,
+			Username: user.Username,
+			Email:    user.Email,
+			Role:     user.Role,
+		},
+	}, nil
 }
 
-func (s *Service) Login(req LoginRequest) (*AuthResponse, error) {
-	identity := strings.TrimSpace(req.Username)
-	if identity == "" || req.Password == "" {
+func (s *service) Login(req *LoginRequest) (*AuthResponse, error) {
+	req.Username = strings.TrimSpace(req.Username)
+	if req.Username == "" || req.Password == "" {
 		return nil, ErrInvalidInput
 	}
-	user, err := s.repo.FindByIdentity(identity)
-	if err != nil {
+
+	user, err := s.repo.FindByUsernameOrEmail(req.Username)
+	if err != nil || user == nil {
 		return nil, ErrInvalidCredentials
 	}
-	if bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)) != nil {
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
 		return nil, ErrInvalidCredentials
 	}
-	return s.authResponse(user)
+
+	token, _ := middleware.GenerateToken(user.ID, user.Username, user.Email, user.Role, s.secretKey)
+
+	return &AuthResponse{
+		Token: token,
+		User: UserResponse{
+			ID:       user.ID,
+			Username: user.Username,
+			Email:    user.Email,
+			Role:     user.Role,
+		},
+	}, nil
 }
 
-func (s *Service) authResponse(u *User) (*AuthResponse, error) {
-	tok, err := GenerateToken(s.secret, u)
-	if err != nil {
-		return nil, err
-	}
-	return &AuthResponse{Token: tok, User: ToUserResponse(u)}, nil
-}
-
-func (s *Service) Profile(id uint) (*User, error) {
-	u, err := s.repo.FindByID(id)
+func (s *service) GetProfile(userID uint) (*database.User, error) {
+	user, err := s.repo.FindByID(userID)
 	if err != nil {
 		return nil, ErrUserNotFound
 	}
-	return u, nil
+	return user, nil
 }
 
-func (s *Service) UpdateProfile(id uint, req UpdateProfileRequest) (*User, error) {
-	u, err := s.repo.FindByID(id)
+func (s *service) UpdateProfile(userID uint, req *UpdateProfileRequest) (*database.User, error) {
+	user, err := s.repo.FindByID(userID)
 	if err != nil {
 		return nil, ErrUserNotFound
 	}
 
-	if email := strings.ToLower(strings.TrimSpace(req.Email)); email != "" {
-		if !validEmail(email) {
-			return nil, fmt.Errorf("%w: format email salah", ErrInvalidInput)
+	if req.Email != "" {
+		req.Email = strings.TrimSpace(req.Email)
+		if !isValidEmail(req.Email) {
+			return nil, ErrInvalidInput
 		}
-		if other, _ := s.repo.FindByEmail(email); other != nil && other.ID != id {
+		if existing, _ := s.repo.FindByEmail(req.Email); existing != nil && existing.ID != userID {
 			return nil, ErrDuplicateUser
 		}
-		u.Email = email
+		user.Email = req.Email
 	}
 
 	if req.Password != "" {
 		if len(req.Password) < 6 {
-			return nil, fmt.Errorf("%w: password minimal 6 karakter", ErrInvalidInput)
+			return nil, ErrInvalidInput
 		}
-		hash, err := HashPassword(req.Password)
-		if err != nil {
-			return nil, err
-		}
-		u.Password = hash
+		hashed, _ := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+		user.Password = string(hashed)
 	}
 
-	if err := s.repo.Save(u); err != nil {
+	if err := s.repo.Update(user); err != nil {
 		return nil, err
 	}
-	return u, nil
+
+	return user, nil
 }

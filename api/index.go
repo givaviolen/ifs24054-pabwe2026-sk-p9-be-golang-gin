@@ -1,7 +1,7 @@
-// Package handler adalah entry point serverless untuk Vercel.
 package handler
 
 import (
+	"encoding/json"
 	"log"
 	"net/http"
 	"sync"
@@ -17,36 +17,55 @@ var (
 	router http.Handler
 )
 
-// initRouter menyiapkan koneksi DB, skema, dan router sekali per instance.
+// initRouter menyiapkan koneksi DB, migrate/seed (bila perlu), dan router sekali per instance.
 // Jika gagal, request berikutnya akan mencoba lagi.
 func initRouter() (http.Handler, error) {
 	mu.Lock()
 	defer mu.Unlock()
+
 	if router != nil {
 		return router, nil
 	}
 
 	cfg := config.LoadConfig()
-	db, err := database.Connect(cfg)
+
+	db, err := database.ConnectDB(cfg)
 	if err != nil {
 		return nil, err
 	}
-	// Serverless: banyak instance paralel, jaga jumlah koneksi per instance tetap kecil.
+
+	// Serverless: banyak instance berjalan paralel, jaga agar jumlah koneksi per instance kecil.
 	if sqlDB, err := db.DB(); err == nil {
 		sqlDB.SetMaxOpenConns(3)
 		sqlDB.SetMaxIdleConns(1)
 		sqlDB.SetConnMaxLifetime(5 * time.Minute)
 	}
+
 	if err := database.EnsureSchema(db, cfg); err != nil {
 		return nil, err
 	}
 
-	router = server.RestoreOriginalPath(server.NewRouter(cfg, db, nil))
+	router = server.RestoreOriginalPath(server.SetupRouter(cfg, db))
 	return router, nil
 }
 
-// Handler dipanggil Vercel untuk setiap request.
+// Handler adalah entry point yang dipanggil Vercel.
 func Handler(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("debug") == "1" {
+		// Mode diagnosis: tampilkan persis apa yang diterima fungsi dari Vercel.
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"entry":       "api/index.go",
+			"method":      r.Method,
+			"url":         r.URL.String(),
+			"path":        r.URL.Path,
+			"request_uri": r.RequestURI,
+			"host":        r.Host,
+			"headers":     r.Header,
+		})
+		return
+	}
+
 	rt, err := initRouter()
 	if err != nil {
 		log.Printf("init gagal: %v", err)
