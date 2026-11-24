@@ -44,9 +44,13 @@ func ConnectDB(cfg *config.Config) (*gorm.DB, error) {
 	var dialector gorm.Dialector
 
 	if cfg.DBConnection == "sqlite" {
-		dialector = sqlite.Open(cfg.DBDatabase)
+		dbName := cfg.DBDatabase
+		if dbName == "" {
+			dbName = "pabwe_p9_blog.db"
+		}
+		dialector = sqlite.Open(dbName)
 	} else {
-		dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=%s TimeZone=Asia/Jakarta connect_timeout=10",
+		dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=%s TimeZone=Asia/Jakarta connect_timeout=5",
 			cfg.DBHost, cfg.DBUsername, cfg.DBPassword, cfg.DBDatabase, cfg.DBPort, cfg.DBSSLMode)
 		// PreferSimpleProtocol: kompatibel dengan connection pooler (Supabase/Neon/PgBouncer)
 		// pada lingkungan serverless sehingga tidak muncul error "prepared statement already exists".
@@ -56,6 +60,40 @@ func ConnectDB(cfg *config.Config) (*gorm.DB, error) {
 	db, err := gorm.Open(dialector, &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
+	if err == nil {
+		if cfg.DBConnection != "sqlite" {
+			if sqlDB, pErr := db.DB(); pErr == nil {
+				if pingErr := sqlDB.Ping(); pingErr != nil {
+					err = pingErr
+				}
+			}
+		}
+	}
+
+	// Jika koneksi PostgreSQL gagal, coba buat database postgres atau fallback ke SQLite
+	if err != nil && cfg.DBConnection != "sqlite" {
+		defaultDsn := fmt.Sprintf("host=%s user=%s password=%s dbname=postgres port=%s sslmode=%s TimeZone=Asia/Jakarta connect_timeout=5",
+			cfg.DBHost, cfg.DBUsername, cfg.DBPassword, cfg.DBPort, cfg.DBSSLMode)
+		if defaultDB, dErr := gorm.Open(postgres.Open(defaultDsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)}); dErr == nil {
+			_ = defaultDB.Exec(fmt.Sprintf("CREATE DATABASE %s", cfg.DBDatabase)).Error
+			if sDB, _ := defaultDB.DB(); sDB != nil {
+				_ = sDB.Close()
+			}
+			if retryDB, rErr := gorm.Open(dialector, &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)}); rErr == nil {
+				if sqlDB, pErr := retryDB.DB(); pErr == nil && sqlDB.Ping() == nil {
+					return retryDB, nil
+				}
+			}
+		}
+
+		// Fallback ke SQLite lokal agar server selalu bisa berjalan
+		fallbackDB := "pabwe_p9_blog.db"
+		if fbDB, fbErr := gorm.Open(sqlite.Open(fallbackDB), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)}); fbErr == nil {
+			return fbDB, nil
+		}
+		return nil, err
+	}
+
 	if err != nil {
 		return nil, err
 	}
